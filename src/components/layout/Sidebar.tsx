@@ -22,7 +22,9 @@ export function Sidebar({
     setSearchQuery,
   } = useConnectionStore();
 
-  const connectedCount = connections.filter((c) => c.status === 'connected').length;
+  const connectedCount = connections.filter(
+    (c) => c.status === 'connected',
+  ).length;
 
   return (
     <aside

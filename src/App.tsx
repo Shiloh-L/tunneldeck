@@ -43,8 +43,12 @@ export default function App() {
 
         <main className='flex-1 flex flex-col min-w-0'>
           <TunnelList
-            onEdit={(conn) => setDialog({ type: 'edit-connection', connection: conn })}
-            onConnect={(conn) => setDialog({ type: 'connect', connection: conn })}
+            onEdit={(conn) =>
+              setDialog({ type: 'edit-connection', connection: conn })
+            }
+            onConnect={(conn) =>
+              setDialog({ type: 'connect', connection: conn })
+            }
           />
         </main>
       </div>

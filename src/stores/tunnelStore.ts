@@ -105,7 +105,9 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 export async function initEventListeners() {
   await listen<ConnectionStatusEvent>('connection-status', (event) => {
     const { connectionId, status, error } = event.payload;
-    useConnectionStore.getState().updateConnectionStatus(connectionId, status, error);
+    useConnectionStore
+      .getState()
+      .updateConnectionStatus(connectionId, status, error);
   });
 
   await listen<AuthStatusEvent>('connection-auth-status', (event) => {

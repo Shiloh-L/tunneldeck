@@ -6,7 +6,8 @@ import { useConnectionStore } from '@/stores/tunnelStore';
 const DUO_TIMEOUT_SECS = 60;
 
 export function DuoPushDialog() {
-  const { duoPushConnectionId, connections, setDuoPushConnectionId } = useConnectionStore();
+  const { duoPushConnectionId, connections, setDuoPushConnectionId } =
+    useConnectionStore();
   const [countdown, setCountdown] = useState(DUO_TIMEOUT_SECS);
 
   const connection = connections.find((c) => c.id === duoPushConnectionId);
@@ -72,7 +73,9 @@ export function DuoPushDialog() {
         {/* Connection name */}
         <p className='text-xs text-text-secondary mb-4'>
           正在连接{' '}
-          <span className='font-medium text-text-primary'>{connection.name}</span>
+          <span className='font-medium text-text-primary'>
+            {connection.name}
+          </span>
         </p>
 
         {/* Instructions */}

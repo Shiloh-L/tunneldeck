@@ -10,7 +10,8 @@ interface TunnelListProps {
 }
 
 export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
-  const { filteredConnections, selectedTagId, tags, isLoading } = useConnectionStore();
+  const { filteredConnections, selectedTagId, tags, isLoading } =
+    useConnectionStore();
 
   const connections = filteredConnections();
   const tagName =
@@ -53,7 +54,9 @@ export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
           <h2 className='text-sm font-semibold text-text-primary'>
             {tagName ?? '全部连接'}
           </h2>
-          <span className='text-xs text-text-muted'>({connections.length})</span>
+          <span className='text-xs text-text-muted'>
+            ({connections.length})
+          </span>
         </div>
       </div>
 

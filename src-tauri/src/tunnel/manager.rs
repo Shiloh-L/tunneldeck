@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use russh::client;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{error, info};
 
 use crate::ssh::auth::{AuthHandler, AuthStatus};
@@ -26,6 +26,8 @@ pub struct TunnelManager {
     audit: Arc<AuditLogger>,
     /// Channel to send status updates to the frontend.
     status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
+    /// IDs of connections whose background tasks have finished (need cleanup).
+    finished_ids: Arc<Mutex<Vec<String>>>,
 }
 
 impl TunnelManager {
@@ -37,6 +39,16 @@ impl TunnelManager {
             connections: HashMap::new(),
             audit,
             status_tx,
+            finished_ids: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Remove handles for connections whose background tasks have already finished.
+    fn cleanup_finished(&mut self) {
+        if let Ok(mut finished) = self.finished_ids.try_lock() {
+            for id in finished.drain(..) {
+                self.connections.remove(&id);
+            }
         }
     }
 
@@ -47,6 +59,9 @@ impl TunnelManager {
         password: String,
         auth_status_tx: mpsc::Sender<AuthStatus>,
     ) -> Result<()> {
+        // Clean up any handles from previously finished (errored/disconnected) tasks
+        self.cleanup_finished();
+
         let id = config.id.clone();
 
         if self.connections.contains_key(&id) {
@@ -70,6 +85,7 @@ impl TunnelManager {
         // Spawn the connection task
         let audit = self.audit.clone();
         let status_tx = self.status_tx.clone();
+        let finished_ids = self.finished_ids.clone();
 
         tokio::spawn(async move {
             let result = connect_and_forward(
@@ -117,6 +133,9 @@ impl TunnelManager {
                         .await;
                 }
             }
+
+            // Mark this connection as finished so the manager can clean up the handle
+            finished_ids.lock().await.push(config.id.clone());
         });
 
         Ok(())

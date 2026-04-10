@@ -41,7 +41,15 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
       target_host: f.target_host,
       target_port: f.target_port,
       enabled: f.enabled,
-    })) ?? [{ name: '', local_port: 13306, target_host: '', target_port: 3306, enabled: true }],
+    })) ?? [
+      {
+        name: '',
+        local_port: 13306,
+        target_host: '',
+        target_port: 3306,
+        enabled: true,
+      },
+    ],
   );
 
   const [saving, setSaving] = useState(false);
@@ -51,12 +59,20 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
     setForm((prev) => ({ ...prev, ...patch }));
 
   const updateForward = (index: number, patch: Partial<ForwardDraft>) =>
-    setForwards((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+    setForwards((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, ...patch } : f)),
+    );
 
   const addForward = () =>
     setForwards((prev) => [
       ...prev,
-      { name: '', local_port: 0, target_host: '', target_port: 0, enabled: true },
+      {
+        name: '',
+        local_port: 0,
+        target_host: '',
+        target_port: 0,
+        enabled: true,
+      },
     ]);
 
   const removeForward = (index: number) =>
@@ -227,7 +243,10 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
             </div>
 
             {forwards.map((fwd, i) => (
-              <div key={i} className='relative rounded-lg border border-border bg-bg-card p-3 space-y-2'>
+              <div
+                key={i}
+                className='relative rounded-lg border border-border bg-bg-card p-3 space-y-2'
+              >
                 {forwards.length > 1 && (
                   <button
                     type='button'
@@ -249,7 +268,9 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
                     <input
                       type='number'
                       value={fwd.local_port || ''}
-                      onChange={(e) => updateForward(i, { local_port: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateForward(i, { local_port: Number(e.target.value) })
+                      }
                       placeholder='本地端口'
                       min={1024}
                       max={65535}
@@ -257,12 +278,16 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
                       className={inputClass}
                     />
                   </div>
-                  <div className='flex items-center justify-center text-text-muted text-xs'>→</div>
+                  <div className='flex items-center justify-center text-text-muted text-xs'>
+                    →
+                  </div>
                   <div className='col-span-2'>
                     <input
                       type='text'
                       value={fwd.target_host}
-                      onChange={(e) => updateForward(i, { target_host: e.target.value })}
+                      onChange={(e) =>
+                        updateForward(i, { target_host: e.target.value })
+                      }
                       placeholder='目标主机'
                       required
                       className={inputClass}
@@ -272,7 +297,11 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
                     <input
                       type='number'
                       value={fwd.target_port || ''}
-                      onChange={(e) => updateForward(i, { target_port: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateForward(i, {
+                          target_port: Number(e.target.value),
+                        })
+                      }
                       placeholder='端口'
                       min={1}
                       max={65535}

@@ -37,6 +37,16 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
     if (isActive) {
       await api.disconnectTunnel(connection.id);
     } else {
+      // Try direct connect if password is stored; fall back to dialog
+      try {
+        const hasPassword = await api.hasStoredPassword(connection.id);
+        if (hasPassword) {
+          await api.connectTunnel(connection.id);
+          return;
+        }
+      } catch {
+        // Fall through to dialog
+      }
       onConnect(connection);
     }
   };
@@ -158,7 +168,9 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
                 'text-text-secondary',
               )}
             >
-              <span className='text-text-muted truncate max-w-[60px]'>{fwd.name || '—'}</span>
+              <span className='text-text-muted truncate max-w-[60px]'>
+                {fwd.name || '—'}
+              </span>
               <span>:{fwd.local_port}</span>
               <ArrowRight size={10} className='text-text-muted flex-shrink-0' />
               <span className='truncate'>
@@ -190,12 +202,13 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
             ))}
           </div>
 
-          {connection.status === 'connected' && connection.uptime_secs != null && (
-            <div className='flex items-center gap-1 text-[10px] text-text-muted'>
-              <Clock size={10} />
-              <span>{formatUptime(connection.uptime_secs)}</span>
-            </div>
-          )}
+          {connection.status === 'connected' &&
+            connection.uptime_secs != null && (
+              <div className='flex items-center gap-1 text-[10px] text-text-muted'>
+                <Clock size={10} />
+                <span>{formatUptime(connection.uptime_secs)}</span>
+              </div>
+            )}
 
           {connection.status === 'error' && connection.error_message && (
             <span className='text-[10px] text-danger truncate max-w-[180px]'>

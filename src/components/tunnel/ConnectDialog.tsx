@@ -63,9 +63,7 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
         <div className='flex items-center justify-between px-5 pt-5 pb-2'>
           <div className='flex items-center gap-2'>
             <Key size={14} className='text-accent' />
-            <h2 className='text-sm font-semibold text-text-primary'>
-              连接
-            </h2>
+            <h2 className='text-sm font-semibold text-text-primary'>连接</h2>
           </div>
           <button
             onClick={onClose}
@@ -79,7 +77,9 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
           {/* Connection name */}
           <p className='text-xs text-text-secondary'>
             正在连接{' '}
-            <span className='font-medium text-text-primary'>{connection.name}</span>
+            <span className='font-medium text-text-primary'>
+              {connection.name}
+            </span>
             <span className='text-text-muted ml-1'>
               ({connection.forwards.filter((f) => f.enabled).length} 个转发规则)
             </span>

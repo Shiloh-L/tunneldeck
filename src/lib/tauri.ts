@@ -10,7 +10,8 @@ import type {
 
 // ─── Connection CRUD ──────────────────────────────────────────────
 
-export const listConnections = () => invoke<ConnectionInfo[]>('list_connections');
+export const listConnections = () =>
+  invoke<ConnectionInfo[]>('list_connections');
 
 export const createConnection = (req: CreateConnectionRequest) =>
   invoke<Connection>('create_connection', { req });
@@ -41,8 +42,10 @@ export const deleteTag = (tagId: string) =>
 
 // ─── Password ─────────────────────────────────────────────────────
 
-export const saveConnectionPassword = (connectionId: string, password: string) =>
-  invoke<void>('save_connection_password', { connectionId, password });
+export const saveConnectionPassword = (
+  connectionId: string,
+  password: string,
+) => invoke<void>('save_connection_password', { connectionId, password });
 
 export const hasStoredPassword = (connectionId: string) =>
   invoke<boolean>('has_stored_password', { connectionId });
