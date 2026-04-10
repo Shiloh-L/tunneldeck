@@ -110,6 +110,10 @@ fn main() {
             commands::update_settings,
             commands::export_config,
             commands::import_config,
+            commands::open_terminal,
+            commands::write_terminal,
+            commands::resize_terminal,
+            commands::close_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running TunnelDeck");

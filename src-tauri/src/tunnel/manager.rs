@@ -1,12 +1,15 @@
 use anyhow::{anyhow, Context, Result};
 use russh::client;
+use russh::client::Handle;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::AppHandle;
 use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{error, info};
 
 use crate::ssh::auth::{AuthHandler, AuthStatus};
 use crate::ssh::client::SshClient;
+use crate::ssh::terminal::{self, TerminalInput};
 use crate::ssh::tunnel::start_multi_forward;
 use crate::store::audit_logger::AuditLogger;
 use crate::tunnel::types::*;
@@ -18,11 +21,19 @@ struct ConnectionHandle {
     status: ConnectionStatus,
     error_message: Option<String>,
     connected_at: Option<std::time::Instant>,
+    session: Arc<Mutex<Option<Arc<Handle<SshClient>>>>>,
+}
+
+/// Handle to an open terminal session.
+struct TerminalHandle {
+    connection_id: String,
+    write_tx: mpsc::UnboundedSender<TerminalInput>,
 }
 
 /// Manages all connection lifecycles.
 pub struct TunnelManager {
     connections: HashMap<String, ConnectionHandle>,
+    terminals: HashMap<String, TerminalHandle>,
     audit: Arc<AuditLogger>,
     /// Channel to send status updates to the frontend.
     status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
@@ -37,6 +48,7 @@ impl TunnelManager {
     ) -> Self {
         Self {
             connections: HashMap::new(),
+            terminals: HashMap::new(),
             audit,
             status_tx,
             finished_ids: Arc::new(Mutex::new(Vec::new())),
@@ -73,12 +85,16 @@ impl TunnelManager {
         // Mark as connecting
         self.update_status(&id, ConnectionStatus::Connecting, None).await;
 
+        let session_holder: Arc<Mutex<Option<Arc<Handle<SshClient>>>>> =
+            Arc::new(Mutex::new(None));
+
         let handle = ConnectionHandle {
             config: config.clone(),
             shutdown_tx,
             status: ConnectionStatus::Connecting,
             error_message: None,
             connected_at: None,
+            session: session_holder.clone(),
         };
         self.connections.insert(id.clone(), handle);
 
@@ -94,6 +110,7 @@ impl TunnelManager {
                 shutdown_rx,
                 auth_status_tx,
                 status_tx.clone(),
+                session_holder,
             )
             .await;
 
@@ -143,6 +160,10 @@ impl TunnelManager {
 
     /// Stop a running connection.
     pub async fn stop(&mut self, connection_id: &str) -> Result<()> {
+        // Close all terminals for this connection
+        self.terminals
+            .retain(|_, h| h.connection_id != connection_id);
+
         if let Some(handle) = self.connections.remove(connection_id) {
             info!("Stopping connection {}", handle.config.name);
             let _ = handle.shutdown_tx.send(true);
@@ -156,6 +177,7 @@ impl TunnelManager {
 
     /// Stop all running connections.
     pub async fn stop_all(&mut self) {
+        self.terminals.clear();
         let ids: Vec<String> = self.connections.keys().cloned().collect();
         for id in ids {
             let _ = self.stop(&id).await;
@@ -187,6 +209,83 @@ impl TunnelManager {
             .send((connection_id.to_string(), status, error))
             .await;
     }
+
+    // ─── Terminal Management ──────────────────────────────────────
+
+    /// Open an interactive terminal on an active connection.
+    pub async fn open_terminal(
+        &mut self,
+        connection_id: &str,
+        cols: u32,
+        rows: u32,
+        app: AppHandle,
+    ) -> Result<String> {
+        let conn = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| anyhow!("Connection {} is not running", connection_id))?;
+
+        let session_guard = conn.session.lock().await;
+        let session = session_guard
+            .as_ref()
+            .ok_or_else(|| anyhow!("Connection {} has no active session", connection_id))?
+            .clone();
+        drop(session_guard);
+
+        let terminal_id = uuid::Uuid::new_v4().to_string();
+        let write_tx = terminal::spawn_terminal(
+            terminal_id.clone(),
+            connection_id.to_string(),
+            session,
+            cols,
+            rows,
+            app,
+        );
+
+        self.terminals.insert(
+            terminal_id.clone(),
+            TerminalHandle {
+                connection_id: connection_id.to_string(),
+                write_tx,
+            },
+        );
+
+        info!("Opened terminal {} for connection {}", terminal_id, connection_id);
+        Ok(terminal_id)
+    }
+
+    /// Write data to a terminal.
+    pub fn write_terminal(&self, terminal_id: &str, data: Vec<u8>) -> Result<()> {
+        let handle = self
+            .terminals
+            .get(terminal_id)
+            .ok_or_else(|| anyhow!("Terminal {} not found", terminal_id))?;
+        handle
+            .write_tx
+            .send(TerminalInput::Data(data))
+            .map_err(|_| anyhow!("Terminal {} is closed", terminal_id))
+    }
+
+    /// Resize a terminal.
+    pub fn resize_terminal(&self, terminal_id: &str, cols: u32, rows: u32) -> Result<()> {
+        let handle = self
+            .terminals
+            .get(terminal_id)
+            .ok_or_else(|| anyhow!("Terminal {} not found", terminal_id))?;
+        handle
+            .write_tx
+            .send(TerminalInput::Resize { cols, rows })
+            .map_err(|_| anyhow!("Terminal {} is closed", terminal_id))
+    }
+
+    /// Close a terminal.
+    pub fn close_terminal(&mut self, terminal_id: &str) -> Result<()> {
+        self.terminals
+            .remove(terminal_id)
+            .ok_or_else(|| anyhow!("Terminal {} not found", terminal_id))?;
+        info!("Closed terminal {}", terminal_id);
+        Ok(())
+    }
 }
 
 /// The actual connection + forwarding logic, runs in a spawned task.
@@ -196,6 +295,7 @@ async fn connect_and_forward(
     shutdown_rx: watch::Receiver<bool>,
     auth_status_tx: mpsc::Sender<AuthStatus>,
     status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
+    session_holder: Arc<Mutex<Option<Arc<Handle<SshClient>>>>>,
 ) -> Result<()> {
     let ssh_config = client::Config::default();
     let ssh_config = Arc::new(ssh_config);
@@ -238,8 +338,22 @@ async fn connect_and_forward(
         forward_summary.join(", ")
     );
 
-    // Start all port forwards on this single SSH session
-    start_multi_forward(session, config.forwards, shutdown_rx).await?;
+    // Wrap session in Arc and store for terminal access
+    let session = Arc::new(session);
+    *session_holder.lock().await = Some(session.clone());
+
+    // Start all port forwards on this single SSH session (or wait if none)
+    let enabled_count = config.forwards.iter().filter(|f| f.enabled).count();
+    if enabled_count > 0 {
+        start_multi_forward(session, config.forwards, shutdown_rx).await?;
+    } else {
+        // No enabled forwards — keep connection alive for terminal use
+        let mut shutdown_rx = shutdown_rx;
+        let _ = shutdown_rx.changed().await;
+    }
+
+    // Clean up session reference
+    *session_holder.lock().await = None;
 
     Ok(())
 }

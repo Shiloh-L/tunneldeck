@@ -8,7 +8,9 @@ import { DuoPushDialog } from '@/components/tunnel/DuoPushDialog';
 import { TagManager } from '@/components/tags/TagManager';
 import { LogViewer } from '@/components/logs/LogViewer';
 import { Settings } from '@/components/settings/Settings';
+import { TerminalPanel } from '@/components/terminal/TerminalPanel';
 import { useConnectionStore, initEventListeners } from '@/stores/tunnelStore';
+import { initTerminalEventListeners } from '@/stores/terminalStore';
 import type { ConnectionInfo } from '@/types';
 
 type Dialog =
@@ -26,6 +28,7 @@ export default function App() {
 
   useEffect(() => {
     initEventListeners();
+    initTerminalEventListeners();
     loadConnections();
     loadTags();
   }, []);
@@ -52,6 +55,8 @@ export default function App() {
           />
         </main>
       </div>
+
+      <TerminalPanel />
 
       {/* ─── Dialogs ───────────────────────────────────────────── */}
       {dialog.type === 'new-connection' && (

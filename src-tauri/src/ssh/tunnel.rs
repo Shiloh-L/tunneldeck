@@ -13,11 +13,10 @@ use crate::tunnel::types::ForwardRule;
 /// Each enabled ForwardRule gets its own TcpListener on localhost.
 /// All listeners share the same SSH session and shutdown signal.
 pub async fn start_multi_forward(
-    session: Handle<SshClient>,
+    session: Arc<Handle<SshClient>>,
     forwards: Vec<ForwardRule>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
-    let session = Arc::new(session);
     let enabled: Vec<_> = forwards.into_iter().filter(|f| f.enabled).collect();
 
     if enabled.is_empty() {

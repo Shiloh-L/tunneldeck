@@ -99,3 +99,21 @@ export interface AuthStatusEvent {
   status: 'prompting_password' | 'waiting_duo_push' | 'success' | 'failed';
   message: string;
 }
+
+// ─── Terminal types ───────────────────────────────────────────────
+
+export interface TerminalSession {
+  terminalId: string;
+  connectionId: string;
+  connectionName: string;
+}
+
+export interface TerminalDataEvent {
+  terminalId: string;
+  data: string;
+}
+
+export interface TerminalExitEvent {
+  terminalId: string;
+  connectionId: string;
+}

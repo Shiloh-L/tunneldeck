@@ -387,3 +387,60 @@ pub async fn import_config(
 
     Ok(count)
 }
+
+// ─── Terminal ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn open_terminal(
+    app: AppHandle,
+    state: State<'_, Arc<RwLock<AppState>>>,
+    connection_id: String,
+    cols: u32,
+    rows: u32,
+) -> Result<String, String> {
+    let mut state = state.write().await;
+    state
+        .tunnel_manager
+        .open_terminal(&connection_id, cols, rows, app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn write_terminal(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    terminal_id: String,
+    data: String,
+) -> Result<(), String> {
+    let state = state.read().await;
+    state
+        .tunnel_manager
+        .write_terminal(&terminal_id, data.into_bytes())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn resize_terminal(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    terminal_id: String,
+    cols: u32,
+    rows: u32,
+) -> Result<(), String> {
+    let state = state.read().await;
+    state
+        .tunnel_manager
+        .resize_terminal(&terminal_id, cols, rows)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn close_terminal(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    terminal_id: String,
+) -> Result<(), String> {
+    let mut state = state.write().await;
+    state
+        .tunnel_manager
+        .close_terminal(&terminal_id)
+        .map_err(|e| e.to_string())
+}

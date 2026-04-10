@@ -8,11 +8,13 @@ import {
   ArrowRight,
   Clock,
   Copy,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ConnectionInfo, ConnectionStatus } from '@/types';
 import * as api from '@/lib/tauri';
 import { useConnectionStore } from '@/stores/tunnelStore';
+import { useTerminalStore } from '@/stores/terminalStore';
 
 interface TunnelCardProps {
   connection: ConnectionInfo;
@@ -23,6 +25,7 @@ interface TunnelCardProps {
 export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const { tags, loadConnections } = useConnectionStore();
+  const openTerminal = useTerminalStore((s) => s.openTerminal);
 
   const connTags = tags.filter((t) => connection.tag_ids.includes(t.id));
   const enabledForwards = connection.forwards.filter((f) => f.enabled);
@@ -101,6 +104,23 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
             >
               {isActive ? <Square size={12} /> : <Play size={12} />}
             </button>
+
+            {/* Terminal button — only for connected */}
+            {connection.status === 'connected' && (
+              <button
+                onClick={() =>
+                  openTerminal(connection.id, connection.name)
+                }
+                className={cn(
+                  'w-7 h-7 flex items-center justify-center rounded-lg',
+                  'bg-accent/10 text-accent hover:bg-accent/20',
+                  'transition-all duration-150',
+                )}
+                title='打开终端'
+              >
+                <Terminal size={12} />
+              </button>
+            )}
 
             {/* More menu */}
             <div className='relative'>

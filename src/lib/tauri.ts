@@ -68,3 +68,23 @@ export const exportConfig = () => invoke<string>('export_config');
 
 export const importConfig = (json: string) =>
   invoke<number>('import_config', { json });
+
+// ─── Terminal ─────────────────────────────────────────────────────
+
+export const openTerminal = (
+  connectionId: string,
+  cols: number,
+  rows: number,
+) => invoke<string>('open_terminal', { connectionId, cols, rows });
+
+export const writeTerminal = (terminalId: string, data: string) =>
+  invoke<void>('write_terminal', { terminalId, data });
+
+export const resizeTerminal = (
+  terminalId: string,
+  cols: number,
+  rows: number,
+) => invoke<void>('resize_terminal', { terminalId, cols, rows });
+
+export const closeTerminal = (terminalId: string) =>
+  invoke<void>('close_terminal', { terminalId });
