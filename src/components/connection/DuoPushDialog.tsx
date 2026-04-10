@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Smartphone, Shield, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useConnectionStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/connectionStore';
 
 const DUO_TIMEOUT_SECS = 60;
 

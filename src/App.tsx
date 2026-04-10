@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
-import { TunnelList } from '@/components/tunnel/TunnelList';
-import { TunnelForm } from '@/components/tunnel/TunnelForm';
-import { ConnectDialog } from '@/components/tunnel/ConnectDialog';
-import { DuoPushDialog } from '@/components/tunnel/DuoPushDialog';
+import { MainContent } from '@/components/layout/MainContent';
+import { ConnectionForm } from '@/components/connection/ConnectionForm';
+import { ConnectDialog } from '@/components/connection/ConnectDialog';
+import { DuoPushDialog } from '@/components/connection/DuoPushDialog';
 import { TagManager } from '@/components/tags/TagManager';
 import { LogViewer } from '@/components/logs/LogViewer';
 import { Settings } from '@/components/settings/Settings';
-import { TerminalPanel } from '@/components/terminal/TerminalPanel';
-import { useConnectionStore, initEventListeners } from '@/stores/tunnelStore';
+import {
+  useConnectionStore,
+  initEventListeners,
+} from '@/stores/connectionStore';
 import { initTerminalEventListeners } from '@/stores/terminalStore';
 import type { ConnectionInfo } from '@/types';
 
@@ -40,31 +42,27 @@ export default function App() {
       <div className='flex flex-1 min-h-0'>
         <Sidebar
           onNewConnection={() => setDialog({ type: 'new-connection' })}
+          onEditConnection={(conn) =>
+            setDialog({ type: 'edit-connection', connection: conn })
+          }
+          onConnectDialog={(conn) =>
+            setDialog({ type: 'connect', connection: conn })
+          }
           onOpenSettings={() => setDialog({ type: 'settings' })}
           onOpenLogs={() => setDialog({ type: 'logs' })}
+          onOpenTags={() => setDialog({ type: 'tags' })}
         />
 
-        <main className='flex-1 flex flex-col min-w-0'>
-          <TunnelList
-            onEdit={(conn) =>
-              setDialog({ type: 'edit-connection', connection: conn })
-            }
-            onConnect={(conn) =>
-              setDialog({ type: 'connect', connection: conn })
-            }
-          />
-        </main>
+        <MainContent />
       </div>
-
-      <TerminalPanel />
 
       {/* ─── Dialogs ───────────────────────────────────────────── */}
       {dialog.type === 'new-connection' && (
-        <TunnelForm onClose={() => setDialog({ type: 'none' })} />
+        <ConnectionForm onClose={() => setDialog({ type: 'none' })} />
       )}
 
       {dialog.type === 'edit-connection' && (
-        <TunnelForm
+        <ConnectionForm
           connection={dialog.connection}
           onClose={() => setDialog({ type: 'none' })}
         />

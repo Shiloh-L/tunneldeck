@@ -1,5 +1,5 @@
 pub mod ssh;
-pub mod tunnel;
+pub mod connection;
 pub mod store;
 pub mod api;
 pub mod logging;

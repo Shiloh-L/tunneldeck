@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use tracing::{debug, error, info};
 
 use super::client::SshClient;
-use crate::tunnel::types::ForwardRule;
+use crate::connection::types::ForwardRule;
 
 /// Start local port-forwarding for multiple rules sharing one SSH session.
 /// Each enabled ForwardRule gets its own TcpListener on localhost.

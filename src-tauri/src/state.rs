@@ -3,14 +3,14 @@ use tokio::sync::mpsc;
 
 use crate::store::audit_logger::AuditLogger;
 use crate::store::json_store::JsonStore;
-use crate::tunnel::manager::TunnelManager;
-use crate::tunnel::types::*;
+use crate::connection::manager::ConnectionManager;
+use crate::connection::types::*;
 
 /// Shared application state, held behind Arc<RwLock<>> in Tauri.
 pub struct AppState {
     pub json_store: JsonStore,
     pub audit: Arc<AuditLogger>,
-    pub tunnel_manager: TunnelManager,
+    pub connection_manager: ConnectionManager,
     pub connections_file: ConnectionsFile,
     pub tags_file: TagsFile,
     pub settings: AppSettings,

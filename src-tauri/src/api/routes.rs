@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::state::AppState;
-use crate::tunnel::types::ConnectionStatus;
+use crate::connection::types::ConnectionStatus;
 
 pub fn create_router(state: Arc<RwLock<AppState>>) -> Router {
     Router::new()
@@ -43,7 +43,7 @@ async fn list_connections(
     let state = state.read().await;
     check_token(&headers, &state).await?;
 
-    let statuses = state.tunnel_manager.get_statuses();
+    let statuses = state.connection_manager.get_statuses();
     let connections: Vec<Value> = state
         .connections_file
         .connections
@@ -87,7 +87,7 @@ async fn get_connection_status(
     let state = state.read().await;
     check_token(&headers, &state).await?;
 
-    let statuses = state.tunnel_manager.get_statuses();
+    let statuses = state.connection_manager.get_statuses();
     let status = statuses.get(&id).map(|(s, e, u)| json!({
         "status": s,
         "error": e,
@@ -108,7 +108,7 @@ async fn disconnect_connection(
     let mut state = state.write().await;
     check_token(&headers, &state).await?;
 
-    match state.tunnel_manager.stop(&id).await {
+    match state.connection_manager.stop(&id).await {
         Ok(()) => Ok(Json(json!({ "id": id, "status": "disconnected" }))),
         Err(e) => Ok(Json(json!({ "error": e.to_string() }))),
     }

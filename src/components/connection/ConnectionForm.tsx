@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { X, Server, Globe, Waypoints, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useConnectionStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/connectionStore';
 import * as api from '@/lib/tauri';
 import type { ConnectionInfo, ForwardRule } from '@/types';
 
-interface TunnelFormProps {
+interface ConnectionFormProps {
   connection?: ConnectionInfo; // if provided, we're editing
   onClose: () => void;
 }
@@ -19,7 +19,7 @@ interface ForwardDraft {
   enabled: boolean;
 }
 
-export function TunnelForm({ connection, onClose }: TunnelFormProps) {
+export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
   const { tags, loadConnections } = useConnectionStore();
   const isEditing = !!connection;
 
@@ -41,15 +41,7 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
       target_host: f.target_host,
       target_port: f.target_port,
       enabled: f.enabled,
-    })) ?? [
-      {
-        name: '',
-        local_port: 13306,
-        target_host: '',
-        target_port: 3306,
-        enabled: true,
-      },
-    ],
+    })) ?? [],
   );
 
   const [saving, setSaving] = useState(false);
@@ -161,7 +153,7 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
         {/* Header */}
         <div className='flex items-center justify-between px-5 pt-5 pb-3'>
           <h2 className='text-base font-semibold text-text-primary'>
-            {isEditing ? '编辑连接' : '新建连接'}
+            {isEditing ? '编辑主机' : '新建主机'}
           </h2>
           <button
             onClick={onClose}
@@ -178,7 +170,7 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
               type='text'
               value={form.name}
               onChange={(e) => update({ name: e.target.value })}
-              placeholder='生产环境跳板机'
+              placeholder='生产环境服务器'
               required
               className={inputClass}
             />
@@ -186,7 +178,7 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
 
           {/* SSH Connection */}
           <div className='space-y-2'>
-            <SectionLabel icon={<Server size={13} />} label='跳板机' />
+            <SectionLabel icon={<Server size={13} />} label='服务器' />
             <div className='grid grid-cols-3 gap-2'>
               <div className='col-span-2'>
                 <input
@@ -226,92 +218,6 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
                 className={inputClass}
               />
             </div>
-          </div>
-
-          {/* Forward Rules */}
-          <div className='space-y-2'>
-            <div className='flex items-center justify-between'>
-              <SectionLabel icon={<Globe size={13} />} label='端口转发规则' />
-              <button
-                type='button'
-                onClick={addForward}
-                className='flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors'
-              >
-                <Plus size={12} />
-                添加规则
-              </button>
-            </div>
-
-            {forwards.map((fwd, i) => (
-              <div
-                key={i}
-                className='relative rounded-lg border border-border bg-bg-card p-3 space-y-2'
-              >
-                {forwards.length > 1 && (
-                  <button
-                    type='button'
-                    onClick={() => removeForward(i)}
-                    className='absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-all'
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                )}
-                <input
-                  type='text'
-                  value={fwd.name}
-                  onChange={(e) => updateForward(i, { name: e.target.value })}
-                  placeholder={`规则名称 (如: MySQL #${i + 1})`}
-                  className={cn(inputClass, 'pr-8')}
-                />
-                <div className='grid grid-cols-5 gap-2 items-center'>
-                  <div className='col-span-1'>
-                    <input
-                      type='number'
-                      value={fwd.local_port || ''}
-                      onChange={(e) =>
-                        updateForward(i, { local_port: Number(e.target.value) })
-                      }
-                      placeholder='本地端口'
-                      min={1024}
-                      max={65535}
-                      required
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className='flex items-center justify-center text-text-muted text-xs'>
-                    →
-                  </div>
-                  <div className='col-span-2'>
-                    <input
-                      type='text'
-                      value={fwd.target_host}
-                      onChange={(e) =>
-                        updateForward(i, { target_host: e.target.value })
-                      }
-                      placeholder='目标主机'
-                      required
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className='col-span-1'>
-                    <input
-                      type='number'
-                      value={fwd.target_port || ''}
-                      onChange={(e) =>
-                        updateForward(i, {
-                          target_port: Number(e.target.value),
-                        })
-                      }
-                      placeholder='端口'
-                      min={1}
-                      max={65535}
-                      required
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
 
           {/* Tags */}
@@ -370,6 +276,98 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
             </span>
           </label>
 
+          {/* Forward Rules (Optional) */}
+          <div className='space-y-2'>
+            <div className='flex items-center justify-between'>
+              <SectionLabel
+                icon={<Globe size={13} />}
+                label='端口转发规则 (可选)'
+              />
+              <button
+                type='button'
+                onClick={addForward}
+                className='flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors'
+              >
+                <Plus size={12} />
+                添加规则
+              </button>
+            </div>
+
+            {forwards.length === 0 && (
+              <p className='text-[11px] text-text-muted px-1'>
+                不需要端口转发？可直接创建，仅使用 SSH 终端。
+              </p>
+            )}
+
+            {forwards.map((fwd, i) => (
+              <div
+                key={i}
+                className='relative rounded-lg border border-border bg-bg-card p-3 space-y-2'
+              >
+                {forwards.length > 0 && (
+                  <button
+                    type='button'
+                    onClick={() => removeForward(i)}
+                    className='absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-all'
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
+                <input
+                  type='text'
+                  value={fwd.name}
+                  onChange={(e) => updateForward(i, { name: e.target.value })}
+                  placeholder={`规则名称 (如: MySQL #${i + 1})`}
+                  className={cn(inputClass, 'pr-8')}
+                />
+                <div className='grid grid-cols-5 gap-2 items-center'>
+                  <div className='col-span-1'>
+                    <input
+                      type='number'
+                      value={fwd.local_port || ''}
+                      onChange={(e) =>
+                        updateForward(i, { local_port: Number(e.target.value) })
+                      }
+                      placeholder='本地端口'
+                      min={1024}
+                      max={65535}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className='flex items-center justify-center text-text-muted text-xs'>
+                    →
+                  </div>
+                  <div className='col-span-2'>
+                    <input
+                      type='text'
+                      value={fwd.target_host}
+                      onChange={(e) =>
+                        updateForward(i, { target_host: e.target.value })
+                      }
+                      placeholder='目标主机'
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className='col-span-1'>
+                    <input
+                      type='number'
+                      value={fwd.target_port || ''}
+                      onChange={(e) =>
+                        updateForward(i, {
+                          target_port: Number(e.target.value),
+                        })
+                      }
+                      placeholder='端口'
+                      min={1}
+                      max={65535}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
           {/* Error */}
           {error && (
             <div className='text-xs text-danger bg-danger/10 px-3 py-2 rounded-lg'>
@@ -400,7 +398,7 @@ export function TunnelForm({ connection, onClose }: TunnelFormProps) {
                 'transition-all disabled:opacity-50',
               )}
             >
-              {saving ? '保存中…' : isEditing ? '保存修改' : '创建连接'}
+              {saving ? '保存中…' : isEditing ? '保存修改' : '创建主机'}
             </button>
           </div>
         </form>

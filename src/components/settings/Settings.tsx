@@ -54,7 +54,7 @@ export function Settings({ onClose }: SettingsProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tunneldeck-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `shelldeck-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };

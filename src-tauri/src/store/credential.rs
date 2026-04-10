@@ -9,7 +9,7 @@ use windows::Win32::Security::Credentials::{
 #[cfg(windows)]
 use windows::core::PWSTR;
 
-const CREDENTIAL_PREFIX: &str = "tunneldeck/";
+const CREDENTIAL_PREFIX: &str = "shelldeck/";
 
 /// Save a password to Windows Credential Manager.
 #[cfg(windows)]

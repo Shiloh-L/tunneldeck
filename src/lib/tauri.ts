@@ -24,11 +24,14 @@ export const deleteConnection = (connectionId: string) =>
 
 // ─── Connection Control ───────────────────────────────────────────
 
-export const connectTunnel = (connectionId: string, password?: string) =>
-  invoke<void>('connect_tunnel', { connectionId, password: password ?? null });
+export const startConnection = (connectionId: string, password?: string) =>
+  invoke<void>('start_connection', {
+    connectionId,
+    password: password ?? null,
+  });
 
-export const disconnectTunnel = (connectionId: string) =>
-  invoke<void>('disconnect_tunnel', { connectionId });
+export const stopConnection = (connectionId: string) =>
+  invoke<void>('stop_connection', { connectionId });
 
 // ─── Tags ─────────────────────────────────────────────────────────
 

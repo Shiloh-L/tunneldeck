@@ -1,25 +1,36 @@
 import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
-import type { TerminalSession, TerminalExitEvent } from '@/types';
+import type {
+  TerminalSession,
+  TerminalExitEvent,
+  ConnectionStatusEvent,
+} from '@/types';
 import * as api from '@/lib/tauri';
 
 interface TerminalStore {
   terminals: TerminalSession[];
   activeTerminalId: string | null;
-  showPanel: boolean;
+
+  // Pending terminal: when double-clicking a disconnected host, we set this
+  // so that after connection succeeds we auto-open a terminal.
+  pendingTerminalConnectionId: string | null;
+  pendingTerminalConnectionName: string | null;
 
   openTerminal: (connectionId: string, connectionName: string) => Promise<void>;
   closeTerminal: (terminalId: string) => Promise<void>;
   removeTerminal: (terminalId: string) => void;
   setActiveTerminal: (terminalId: string) => void;
-  setShowPanel: (show: boolean) => void;
-  togglePanel: () => void;
+  setPendingTerminal: (
+    connectionId: string | null,
+    connectionName: string | null,
+  ) => void;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   terminals: [],
   activeTerminalId: null,
-  showPanel: false,
+  pendingTerminalConnectionId: null,
+  pendingTerminalConnectionName: null,
 
   openTerminal: async (connectionId, connectionName) => {
     const terminalId = await api.openTerminal(connectionId, 120, 30);
@@ -31,7 +42,6 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     set((state) => ({
       terminals: [...state.terminals, session],
       activeTerminalId: terminalId,
-      showPanel: true,
     }));
   },
 
@@ -53,24 +63,44 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         state.activeTerminalId === terminalId
           ? (terminals[terminals.length - 1]?.terminalId ?? null)
           : state.activeTerminalId;
-      return {
-        terminals,
-        activeTerminalId,
-        showPanel: terminals.length > 0 ? state.showPanel : false,
-      };
+      return { terminals, activeTerminalId };
     });
   },
 
   setActiveTerminal: (terminalId) => set({ activeTerminalId: terminalId }),
-  setShowPanel: (show) => set({ showPanel: show }),
-  togglePanel: () => set((state) => ({ showPanel: !state.showPanel })),
+
+  setPendingTerminal: (connectionId, connectionName) =>
+    set({
+      pendingTerminalConnectionId: connectionId,
+      pendingTerminalConnectionName: connectionName,
+    }),
 }));
 
 // ─── Tauri Event Listeners ────────────────────────────────────────
 
 export async function initTerminalEventListeners() {
+  // Handle terminal exit
   await listen<TerminalExitEvent>('terminal-exit', (event) => {
     const state = useTerminalStore.getState();
     state.closeTerminal(event.payload.terminalId);
+  });
+
+  // Handle pending terminal: when a connection becomes 'connected' and we have a pending request
+  await listen<ConnectionStatusEvent>('connection-status', async (event) => {
+    const { connectionId, status } = event.payload;
+    const state = useTerminalStore.getState();
+
+    if (
+      status === 'connected' &&
+      state.pendingTerminalConnectionId === connectionId
+    ) {
+      const name = state.pendingTerminalConnectionName ?? connectionId;
+      state.setPendingTerminal(null, null);
+      try {
+        await state.openTerminal(connectionId, name);
+      } catch {
+        // Terminal open failed — connection may have dropped
+      }
+    }
   });
 }

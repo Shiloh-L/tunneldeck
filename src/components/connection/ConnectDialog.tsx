@@ -27,7 +27,7 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
 
     try {
       if (hasStored && !password) {
-        await api.connectTunnel(connection.id);
+        await api.startConnection(connection.id);
       } else {
         if (!password) {
           setError('请输入密码');
@@ -37,7 +37,7 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
         if (savePassword) {
           await api.saveConnectionPassword(connection.id, password);
         }
-        await api.connectTunnel(connection.id, password);
+        await api.startConnection(connection.id, password);
       }
       onClose();
     } catch (err) {

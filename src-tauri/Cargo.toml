@@ -1,11 +1,11 @@
 [package]
-name = "tunneldeck"
+name = "shelldeck"
 version = "0.1.0"
 edition = "2021"
-description = "Enterprise SSH tunnel manager"
+description = "SSH connection manager"
 
 [lib]
-name = "tunneldeck_lib"
+name = "shelldeck_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

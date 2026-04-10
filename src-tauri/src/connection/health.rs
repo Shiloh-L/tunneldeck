@@ -2,9 +2,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{warn, error};
 
-use crate::tunnel::types::*;
+use crate::connection::types::*;
 
-/// Health checker: periodically checks tunnel status and triggers reconnection.
+/// Health checker: periodically checks connection status and triggers reconnection.
 pub struct HealthChecker {
     interval: Duration,
     max_attempts: u32,
@@ -18,8 +18,8 @@ impl HealthChecker {
         }
     }
 
-    /// Monitor a tunnel's status. If it detects disconnection, signals for reconnection.
-    /// This is a placeholder that will be connected to the TunnelManager's status stream.
+    /// Monitor a connection's status. If it detects disconnection, signals for reconnection.
+    /// This is a placeholder that will be connected to the ConnectionManager's status stream.
     pub async fn run(
         &self,
         connection_id: String,

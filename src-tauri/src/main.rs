@@ -4,13 +4,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tauri::{Emitter, Manager};
 
-use tunneldeck_lib::commands;
-use tunneldeck_lib::logging::audit::init_logging;
-use tunneldeck_lib::state::AppState;
-use tunneldeck_lib::store::audit_logger::AuditLogger;
-use tunneldeck_lib::store::json_store::JsonStore;
-use tunneldeck_lib::tunnel::manager::TunnelManager;
-use tunneldeck_lib::tunnel::types::*;
+use shelldeck_lib::commands;
+use shelldeck_lib::logging::audit::init_logging;
+use shelldeck_lib::state::AppState;
+use shelldeck_lib::store::audit_logger::AuditLogger;
+use shelldeck_lib::store::json_store::JsonStore;
+use shelldeck_lib::connection::manager::ConnectionManager;
+use shelldeck_lib::connection::types::*;
 
 fn main() {
     init_logging();
@@ -41,12 +41,12 @@ fn main() {
                 let _ = audit.cleanup_old_logs().await;
 
                 let (status_tx, status_rx) = mpsc::channel(256);
-                let tunnel_manager = TunnelManager::new(audit.clone(), status_tx);
+                let connection_manager = ConnectionManager::new(audit.clone(), status_tx);
 
                 Arc::new(RwLock::new(AppState {
                     json_store,
                     audit,
-                    tunnel_manager,
+                    connection_manager,
                     connections_file,
                     tags_file,
                     settings,
@@ -54,7 +54,7 @@ fn main() {
                 }))
             });
 
-            // Forward tunnel status events to the frontend
+            // Forward connection status events to the frontend
             let state_clone = state.clone();
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -82,7 +82,7 @@ fn main() {
                     let port = s.settings.api_port;
                     drop(s);
                     if let Err(e) =
-                        tunneldeck_lib::api::server::start_api_server(state_for_api.clone(), port)
+                        shelldeck_lib::api::server::start_api_server(state_for_api.clone(), port)
                             .await
                     {
                         tracing::error!("Failed to start API server: {}", e);
@@ -98,8 +98,8 @@ fn main() {
             commands::create_connection,
             commands::update_connection,
             commands::delete_connection,
-            commands::connect_tunnel,
-            commands::disconnect_tunnel,
+            commands::start_connection,
+            commands::stop_connection,
             commands::list_tags,
             commands::create_tag,
             commands::delete_tag,
@@ -116,5 +116,5 @@ fn main() {
             commands::close_terminal,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TunnelDeck");
+        .expect("error while running ShellDeck");
 }

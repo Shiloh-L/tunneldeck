@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::tunnel::types::{Connection, ConnectionsFile, TagsFile};
+use crate::connection::types::{Connection, ConnectionsFile, TagsFile};
 
 /// Exported configuration (passwords are excluded for security).
 #[derive(Debug, Serialize, Deserialize)]

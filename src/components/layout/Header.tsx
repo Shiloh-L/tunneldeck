@@ -25,10 +25,10 @@ export function Header() {
       {/* App title */}
       <div data-tauri-drag-region className='flex items-center gap-2.5'>
         <div className='w-5 h-5 rounded-md bg-accent flex items-center justify-center'>
-          <span className='text-[10px] font-bold text-white'>T</span>
+          <span className='text-[10px] font-bold text-white'>S</span>
         </div>
         <span className='text-sm font-semibold text-text-primary tracking-tight'>
-          TunnelDeck
+          ShellDeck
         </span>
       </div>
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, X, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useConnectionStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/connectionStore';
 import * as api from '@/lib/tauri';
 
 const PRESET_COLORS = [

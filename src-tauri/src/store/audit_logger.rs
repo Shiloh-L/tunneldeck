@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
-use crate::tunnel::types::AuditEntry;
+use crate::connection::types::AuditEntry;
 
 /// Append-only JSONL audit logger with daily file rotation.
 pub struct AuditLogger {

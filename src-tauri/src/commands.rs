@@ -7,7 +7,7 @@ use crate::config::import_export;
 use crate::ssh::auth::AuthStatus;
 use crate::state::AppState;
 use crate::store::credential;
-use crate::tunnel::types::*;
+use crate::connection::types::*;
 
 // ─── Connection CRUD ──────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ pub async fn list_connections(
     state: State<'_, Arc<RwLock<AppState>>>,
 ) -> Result<Vec<ConnectionInfo>, String> {
     let state = state.read().await;
-    let statuses = state.tunnel_manager.get_statuses();
+    let statuses = state.connection_manager.get_statuses();
 
     let infos: Vec<ConnectionInfo> = state
         .connections_file
@@ -143,7 +143,7 @@ pub async fn delete_connection(
     let mut state = state.write().await;
 
     // Stop if running
-    let _ = state.tunnel_manager.stop(&connection_id).await;
+    let _ = state.connection_manager.stop(&connection_id).await;
 
     // Remove credential
     let _ = credential::delete_password(&connection_id);
@@ -182,7 +182,7 @@ pub async fn delete_connection(
 // ─── Connection Control ───────────────────────────────────────────
 
 #[tauri::command]
-pub async fn connect_tunnel(
+pub async fn start_connection(
     app: AppHandle,
     state: State<'_, Arc<RwLock<AppState>>>,
     connection_id: String,
@@ -232,7 +232,7 @@ pub async fn connect_tunnel(
     });
 
     state
-        .tunnel_manager
+        .connection_manager
         .start(config, pwd, auth_tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -241,13 +241,13 @@ pub async fn connect_tunnel(
 }
 
 #[tauri::command]
-pub async fn disconnect_tunnel(
+pub async fn stop_connection(
     state: State<'_, Arc<RwLock<AppState>>>,
     connection_id: String,
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state
-        .tunnel_manager
+        .connection_manager
         .stop(&connection_id)
         .await
         .map_err(|e| e.to_string())
@@ -400,7 +400,7 @@ pub async fn open_terminal(
 ) -> Result<String, String> {
     let mut state = state.write().await;
     state
-        .tunnel_manager
+        .connection_manager
         .open_terminal(&connection_id, cols, rows, app)
         .await
         .map_err(|e| e.to_string())
@@ -414,7 +414,7 @@ pub async fn write_terminal(
 ) -> Result<(), String> {
     let state = state.read().await;
     state
-        .tunnel_manager
+        .connection_manager
         .write_terminal(&terminal_id, data.into_bytes())
         .map_err(|e| e.to_string())
 }
@@ -428,7 +428,7 @@ pub async fn resize_terminal(
 ) -> Result<(), String> {
     let state = state.read().await;
     state
-        .tunnel_manager
+        .connection_manager
         .resize_terminal(&terminal_id, cols, rows)
         .map_err(|e| e.to_string())
 }
@@ -440,7 +440,7 @@ pub async fn close_terminal(
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state
-        .tunnel_manager
+        .connection_manager
         .close_terminal(&terminal_id)
         .map_err(|e| e.to_string())
 }

@@ -13,16 +13,20 @@ import {
 import { cn } from '@/lib/utils';
 import type { ConnectionInfo, ConnectionStatus } from '@/types';
 import * as api from '@/lib/tauri';
-import { useConnectionStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/connectionStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 
-interface TunnelCardProps {
+interface ConnectionCardProps {
   connection: ConnectionInfo;
   onEdit: (conn: ConnectionInfo) => void;
   onConnect: (conn: ConnectionInfo) => void;
 }
 
-export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
+export function ConnectionCard({
+  connection,
+  onEdit,
+  onConnect,
+}: ConnectionCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const { tags, loadConnections } = useConnectionStore();
   const openTerminal = useTerminalStore((s) => s.openTerminal);
@@ -38,13 +42,13 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
 
   const handleToggle = async () => {
     if (isActive) {
-      await api.disconnectTunnel(connection.id);
+      await api.stopConnection(connection.id);
     } else {
       // Try direct connect if password is stored; fall back to dialog
       try {
         const hasPassword = await api.hasStoredPassword(connection.id);
         if (hasPassword) {
-          await api.connectTunnel(connection.id);
+          await api.startConnection(connection.id);
           return;
         }
       } catch {
@@ -108,9 +112,7 @@ export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
             {/* Terminal button — only for connected */}
             {connection.status === 'connected' && (
               <button
-                onClick={() =>
-                  openTerminal(connection.id, connection.name)
-                }
+                onClick={() => openTerminal(connection.id, connection.name)}
                 className={cn(
                   'w-7 h-7 flex items-center justify-center rounded-lg',
                   'bg-accent/10 text-accent hover:bg-accent/20',

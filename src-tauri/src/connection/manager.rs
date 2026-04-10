@@ -12,7 +12,7 @@ use crate::ssh::client::SshClient;
 use crate::ssh::terminal::{self, TerminalInput};
 use crate::ssh::tunnel::start_multi_forward;
 use crate::store::audit_logger::AuditLogger;
-use crate::tunnel::types::*;
+use crate::connection::types::*;
 
 /// Handle to a running connection, used to stop it.
 struct ConnectionHandle {
@@ -31,7 +31,7 @@ struct TerminalHandle {
 }
 
 /// Manages all connection lifecycles.
-pub struct TunnelManager {
+pub struct ConnectionManager {
     connections: HashMap<String, ConnectionHandle>,
     terminals: HashMap<String, TerminalHandle>,
     audit: Arc<AuditLogger>,
@@ -41,7 +41,7 @@ pub struct TunnelManager {
     finished_ids: Arc<Mutex<Vec<String>>>,
 }
 
-impl TunnelManager {
+impl ConnectionManager {
     pub fn new(
         audit: Arc<AuditLogger>,
         status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
