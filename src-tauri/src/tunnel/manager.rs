@@ -7,65 +7,65 @@ use tracing::{error, info};
 
 use crate::ssh::auth::{AuthHandler, AuthStatus};
 use crate::ssh::client::SshClient;
-use crate::ssh::tunnel::start_local_forward;
+use crate::ssh::tunnel::start_multi_forward;
 use crate::store::audit_logger::AuditLogger;
 use crate::tunnel::types::*;
 
-/// Handle to a running tunnel, used to stop it.
-struct TunnelHandle {
-    config: TunnelConfig,
+/// Handle to a running connection, used to stop it.
+struct ConnectionHandle {
+    config: Connection,
     shutdown_tx: watch::Sender<bool>,
-    status: TunnelStatus,
+    status: ConnectionStatus,
     error_message: Option<String>,
     connected_at: Option<std::time::Instant>,
 }
 
-/// Manages all tunnel lifecycles.
+/// Manages all connection lifecycles.
 pub struct TunnelManager {
-    tunnels: HashMap<String, TunnelHandle>,
+    connections: HashMap<String, ConnectionHandle>,
     audit: Arc<AuditLogger>,
     /// Channel to send status updates to the frontend.
-    status_tx: mpsc::Sender<(String, TunnelStatus, Option<String>)>,
+    status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
 }
 
 impl TunnelManager {
     pub fn new(
         audit: Arc<AuditLogger>,
-        status_tx: mpsc::Sender<(String, TunnelStatus, Option<String>)>,
+        status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
     ) -> Self {
         Self {
-            tunnels: HashMap::new(),
+            connections: HashMap::new(),
             audit,
             status_tx,
         }
     }
 
-    /// Start a tunnel. Returns immediately; the tunnel runs in the background.
+    /// Start a connection. Returns immediately; the connection runs in the background.
     pub async fn start(
         &mut self,
-        config: TunnelConfig,
+        config: Connection,
         password: String,
         auth_status_tx: mpsc::Sender<AuthStatus>,
     ) -> Result<()> {
         let id = config.id.clone();
 
-        if self.tunnels.contains_key(&id) {
-            return Err(anyhow!("Tunnel {} is already running", config.name));
+        if self.connections.contains_key(&id) {
+            return Err(anyhow!("Connection {} is already running", config.name));
         }
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         // Mark as connecting
-        self.update_status(&id, TunnelStatus::Connecting, None).await;
+        self.update_status(&id, ConnectionStatus::Connecting, None).await;
 
-        let handle = TunnelHandle {
+        let handle = ConnectionHandle {
             config: config.clone(),
             shutdown_tx,
-            status: TunnelStatus::Connecting,
+            status: ConnectionStatus::Connecting,
             error_message: None,
             connected_at: None,
         };
-        self.tunnels.insert(id.clone(), handle);
+        self.connections.insert(id.clone(), handle);
 
         // Spawn the connection task
         let audit = self.audit.clone();
@@ -83,33 +83,33 @@ impl TunnelManager {
 
             match &result {
                 Ok(()) => {
-                    info!("Tunnel {} stopped gracefully", config.name);
+                    info!("Connection {} stopped gracefully", config.name);
                     let _ = status_tx
-                        .send((config.id.clone(), TunnelStatus::Disconnected, None))
+                        .send((config.id.clone(), ConnectionStatus::Disconnected, None))
                         .await;
                     let _ = audit
                         .append(&AuditEntry {
-                            tunnel_id: config.id.clone(),
-                            tunnel_name: config.name.clone(),
+                            connection_id: config.id.clone(),
+                            connection_name: config.name.clone(),
                             event: AuditEvent::Disconnected,
-                            message: "Tunnel stopped".into(),
+                            message: "Connection stopped".into(),
                             ts: chrono::Utc::now().to_rfc3339(),
                         })
                         .await;
                 }
                 Err(e) => {
-                    error!("Tunnel {} failed: {}", config.name, e);
+                    error!("Connection {} failed: {}", config.name, e);
                     let _ = status_tx
                         .send((
                             config.id.clone(),
-                            TunnelStatus::Error,
+                            ConnectionStatus::Error,
                             Some(e.to_string()),
                         ))
                         .await;
                     let _ = audit
                         .append(&AuditEntry {
-                            tunnel_id: config.id.clone(),
-                            tunnel_name: config.name.clone(),
+                            connection_id: config.id.clone(),
+                            connection_name: config.name.clone(),
                             event: AuditEvent::Error,
                             message: e.to_string(),
                             ts: chrono::Utc::now().to_rfc3339(),
@@ -122,38 +122,30 @@ impl TunnelManager {
         Ok(())
     }
 
-    /// Stop a running tunnel.
-    pub async fn stop(&mut self, tunnel_id: &str) -> Result<()> {
-        if let Some(handle) = self.tunnels.remove(tunnel_id) {
-            info!("Stopping tunnel {}", handle.config.name);
+    /// Stop a running connection.
+    pub async fn stop(&mut self, connection_id: &str) -> Result<()> {
+        if let Some(handle) = self.connections.remove(connection_id) {
+            info!("Stopping connection {}", handle.config.name);
             let _ = handle.shutdown_tx.send(true);
-            self.update_status(tunnel_id, TunnelStatus::Disconnected, None)
+            self.update_status(connection_id, ConnectionStatus::Disconnected, None)
                 .await;
             Ok(())
         } else {
-            Err(anyhow!("Tunnel {} is not running", tunnel_id))
+            Err(anyhow!("Connection {} is not running", connection_id))
         }
     }
 
-    /// Stop all running tunnels.
+    /// Stop all running connections.
     pub async fn stop_all(&mut self) {
-        let ids: Vec<String> = self.tunnels.keys().cloned().collect();
+        let ids: Vec<String> = self.connections.keys().cloned().collect();
         for id in ids {
             let _ = self.stop(&id).await;
         }
     }
 
-    /// Get the status of a specific tunnel.
-    pub fn get_status(&self, tunnel_id: &str) -> TunnelStatus {
-        self.tunnels
-            .get(tunnel_id)
-            .map(|h| h.status)
-            .unwrap_or(TunnelStatus::Disconnected)
-    }
-
-    /// Get info for all tunnels.
-    pub fn get_statuses(&self) -> HashMap<String, (TunnelStatus, Option<String>, Option<u64>)> {
-        self.tunnels
+    /// Get info for all connections.
+    pub fn get_statuses(&self) -> HashMap<String, (ConnectionStatus, Option<String>, Option<u64>)> {
+        self.connections
             .iter()
             .map(|(id, h)| {
                 let uptime = h
@@ -167,32 +159,32 @@ impl TunnelManager {
     /// Update internal status and notify frontend.
     async fn update_status(
         &self,
-        tunnel_id: &str,
-        status: TunnelStatus,
+        connection_id: &str,
+        status: ConnectionStatus,
         error: Option<String>,
     ) {
         let _ = self
             .status_tx
-            .send((tunnel_id.to_string(), status, error))
+            .send((connection_id.to_string(), status, error))
             .await;
     }
 }
 
 /// The actual connection + forwarding logic, runs in a spawned task.
 async fn connect_and_forward(
-    config: TunnelConfig,
+    config: Connection,
     password: String,
     shutdown_rx: watch::Receiver<bool>,
     auth_status_tx: mpsc::Sender<AuthStatus>,
-    status_tx: mpsc::Sender<(String, TunnelStatus, Option<String>)>,
+    status_tx: mpsc::Sender<(String, ConnectionStatus, Option<String>)>,
 ) -> Result<()> {
     let ssh_config = client::Config::default();
     let ssh_config = Arc::new(ssh_config);
 
     let handler = SshClient::new();
 
-    // Connect to jump host
-    let addr = format!("{}:{}", config.jump_host, config.jump_port);
+    // Connect to SSH host
+    let addr = format!("{}:{}", config.host, config.port);
     info!("Connecting to SSH host: {}", addr);
 
     let mut session = client::connect(ssh_config, &addr, handler)
@@ -201,7 +193,7 @@ async fn connect_and_forward(
 
     // Run keyboard-interactive authentication (password + Duo Push)
     let _ = status_tx
-        .send((config.id.clone(), TunnelStatus::Connecting, None))
+        .send((config.id.clone(), ConnectionStatus::Connecting, None))
         .await;
 
     let mut auth_handler = AuthHandler::new(password, auth_status_tx);
@@ -212,23 +204,23 @@ async fn connect_and_forward(
 
     // Auth succeeded → mark as connected
     let _ = status_tx
-        .send((config.id.clone(), TunnelStatus::Connected, None))
+        .send((config.id.clone(), ConnectionStatus::Connected, None))
         .await;
 
+    let forward_summary: Vec<String> = config
+        .forwards
+        .iter()
+        .filter(|f| f.enabled)
+        .map(|f| format!("localhost:{} -> {}:{}", f.local_port, f.target_host, f.target_port))
+        .collect();
     info!(
-        "Tunnel {} connected: localhost:{} -> {}:{}",
-        config.name, config.local_port, config.target_host, config.target_port
+        "Connection {} authenticated. Forwards: [{}]",
+        config.name,
+        forward_summary.join(", ")
     );
 
-    // Start local port forwarding
-    start_local_forward(
-        session,
-        config.local_port,
-        config.target_host.clone(),
-        config.target_port,
-        shutdown_rx,
-    )
-    .await?;
+    // Start all port forwards on this single SSH session
+    start_multi_forward(session, config.forwards, shutdown_rx).await?;
 
     Ok(())
 }

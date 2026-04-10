@@ -1,28 +1,28 @@
 import { Network, Search, Plus, Settings, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 
 interface SidebarProps {
-  onNewTunnel: () => void;
+  onNewConnection: () => void;
   onOpenSettings: () => void;
   onOpenLogs: () => void;
 }
 
 export function Sidebar({
-  onNewTunnel,
+  onNewConnection,
   onOpenSettings,
   onOpenLogs,
 }: SidebarProps) {
   const {
     tags,
-    tunnels,
+    connections,
     selectedTagId,
     setSelectedTag,
     searchQuery,
     setSearchQuery,
-  } = useTunnelStore();
+  } = useConnectionStore();
 
-  const connectedCount = tunnels.filter((t) => t.status === 'connected').length;
+  const connectedCount = connections.filter((c) => c.status === 'connected').length;
 
   return (
     <aside
@@ -43,7 +43,7 @@ export function Sidebar({
           <Search size={13} className='text-text-muted flex-shrink-0' />
           <input
             type='text'
-            placeholder='搜索隧道…'
+            placeholder='搜索连接…'
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={cn(
@@ -56,11 +56,11 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className='flex-1 overflow-y-auto px-2 py-1 space-y-0.5'>
-        {/* All tunnels */}
+        {/* All connections */}
         <SidebarItem
           icon={<Network size={14} />}
-          label='全部隧道'
-          count={tunnels.length}
+          label='全部连接'
+          count={connections.length}
           active={selectedTagId === null}
           onClick={() => setSelectedTag(null)}
           badge={
@@ -82,8 +82,8 @@ export function Sidebar({
         )}
 
         {tags.map((tag) => {
-          const tagTunnelCount = tunnels.filter((t) =>
-            t.tag_ids.includes(tag.id),
+          const tagConnCount = connections.filter((c) =>
+            c.tag_ids.includes(tag.id),
           ).length;
           return (
             <SidebarItem
@@ -95,7 +95,7 @@ export function Sidebar({
                 />
               }
               label={tag.name}
-              count={tagTunnelCount}
+              count={tagConnCount}
               active={selectedTagId === tag.id}
               onClick={() => setSelectedTag(tag.id)}
             />
@@ -107,8 +107,8 @@ export function Sidebar({
       <div className='p-2 space-y-0.5 border-t border-border'>
         <SidebarItem
           icon={<Plus size={14} />}
-          label='新建隧道'
-          onClick={onNewTunnel}
+          label='新建连接'
+          onClick={onNewConnection}
           accent
         />
         <SidebarItem

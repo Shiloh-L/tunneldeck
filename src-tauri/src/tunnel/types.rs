@@ -1,18 +1,48 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// SSH tunnel configuration persisted in tunnels.json
+// ─── Forward Rule (one port mapping within a connection) ──────────
+
+/// A single port-forwarding rule: local_port → target_host:target_port
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TunnelConfig {
+pub struct ForwardRule {
     pub id: String,
+    /// Optional friendly name, e.g. "MySQL", "Redis"
+    #[serde(default)]
     pub name: String,
-    pub jump_host: String,
-    #[serde(default = "default_ssh_port")]
-    pub jump_port: u16,
-    pub username: String,
+    pub local_port: u16,
     pub target_host: String,
     pub target_port: u16,
-    pub local_port: u16,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl ForwardRule {
+    pub fn new(name: String, local_port: u16, target_host: String, target_port: u16) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            local_port,
+            target_host,
+            target_port,
+            enabled: true,
+        }
+    }
+}
+
+// ─── Connection (one SSH session with N forward rules) ────────────
+
+/// An SSH connection configuration persisted in connections.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Connection {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: String,
+    #[serde(default)]
+    pub forwards: Vec<ForwardRule>,
     #[serde(default)]
     pub auto_connect: bool,
     #[serde(default)]
@@ -25,26 +55,16 @@ fn default_ssh_port() -> u16 {
     22
 }
 
-impl TunnelConfig {
-    pub fn new(
-        name: String,
-        jump_host: String,
-        jump_port: u16,
-        username: String,
-        target_host: String,
-        target_port: u16,
-        local_port: u16,
-    ) -> Self {
+impl Connection {
+    pub fn new(name: String, host: String, port: u16, username: String) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
             id: Uuid::new_v4().to_string(),
             name,
-            jump_host,
-            jump_port,
+            host,
+            port,
             username,
-            target_host,
-            target_port,
-            local_port,
+            forwards: Vec::new(),
             auto_connect: false,
             tag_ids: Vec::new(),
             created_at: now.clone(),
@@ -53,10 +73,10 @@ impl TunnelConfig {
     }
 }
 
-/// Runtime status of a tunnel
+/// Runtime status of a connection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TunnelStatus {
+pub enum ConnectionStatus {
     Disconnected,
     Connecting,
     WaitingDuo,
@@ -65,15 +85,14 @@ pub enum TunnelStatus {
     Error,
 }
 
-/// Tunnel info sent to the frontend (config + live status)
+/// Connection info sent to the frontend (config + live status)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TunnelInfo {
+pub struct ConnectionInfo {
     #[serde(flatten)]
-    pub config: TunnelConfig,
-    pub status: TunnelStatus,
+    pub config: Connection,
+    pub status: ConnectionStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
-    /// Seconds since connected, if connected
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uptime_secs: Option<u64>,
 }
@@ -99,8 +118,8 @@ impl Tag {
 /// Audit log entry (one line in JSONL)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
-    pub tunnel_id: String,
-    pub tunnel_name: String,
+    pub connection_id: String,
+    pub connection_name: String,
     pub event: AuditEvent,
     pub message: String,
     pub ts: String,
@@ -164,11 +183,11 @@ impl Default for AppSettings {
     }
 }
 
-/// File-level wrapper for tunnels.json
+/// File-level wrapper for connections.json
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TunnelsFile {
+pub struct ConnectionsFile {
     #[serde(default)]
-    pub tunnels: Vec<TunnelConfig>,
+    pub connections: Vec<Connection>,
 }
 
 /// File-level wrapper for tags.json

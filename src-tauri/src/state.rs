@@ -11,9 +11,9 @@ pub struct AppState {
     pub json_store: JsonStore,
     pub audit: Arc<AuditLogger>,
     pub tunnel_manager: TunnelManager,
-    pub tunnels_file: TunnelsFile,
+    pub connections_file: ConnectionsFile,
     pub tags_file: TagsFile,
     pub settings: AppSettings,
-    /// Receiver for tunnel status updates from background tasks.
-    pub status_rx: Option<mpsc::Receiver<(String, TunnelStatus, Option<String>)>>,
+    /// Receiver for connection status updates from background tasks.
+    pub status_rx: Option<mpsc::Receiver<(String, ConnectionStatus, Option<String>)>>,
 }

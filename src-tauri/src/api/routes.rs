@@ -10,13 +10,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::state::AppState;
-use crate::tunnel::types::TunnelStatus;
+use crate::tunnel::types::ConnectionStatus;
 
 pub fn create_router(state: Arc<RwLock<AppState>>) -> Router {
     Router::new()
-        .route("/api/tunnels", get(list_tunnels))
-        .route("/api/tunnels/{id}/status", get(get_tunnel_status))
-        .route("/api/tunnels/{id}/stop", post(stop_tunnel))
+        .route("/api/connections", get(list_connections))
+        .route("/api/connections/{id}/status", get(get_connection_status))
+        .route("/api/connections/{id}/disconnect", post(disconnect_connection))
         .with_state(state)
 }
 
@@ -36,7 +36,7 @@ async fn check_token(headers: &HeaderMap, state: &AppState) -> Result<(), Status
     }
 }
 
-async fn list_tunnels(
+async fn list_connections(
     headers: HeaderMap,
     State(state): State<Arc<RwLock<AppState>>>,
 ) -> Result<Json<Value>, StatusCode> {
@@ -44,21 +44,31 @@ async fn list_tunnels(
     check_token(&headers, &state).await?;
 
     let statuses = state.tunnel_manager.get_statuses();
-    let tunnels: Vec<Value> = state
-        .tunnels_file
-        .tunnels
+    let connections: Vec<Value> = state
+        .connections_file
+        .connections
         .iter()
-        .map(|t| {
+        .map(|c| {
             let (status, error, uptime) = statuses
-                .get(&t.id)
+                .get(&c.id)
                 .cloned()
-                .unwrap_or((TunnelStatus::Disconnected, None, None));
+                .unwrap_or((ConnectionStatus::Disconnected, None, None));
+            let forwards: Vec<Value> = c.forwards.iter().map(|f| {
+                json!({
+                    "id": f.id,
+                    "name": f.name,
+                    "local_port": f.local_port,
+                    "target_host": f.target_host,
+                    "target_port": f.target_port,
+                    "enabled": f.enabled,
+                })
+            }).collect();
             json!({
-                "id": t.id,
-                "name": t.name,
-                "jump_host": t.jump_host,
-                "target": format!("{}:{}", t.target_host, t.target_port),
-                "local_port": t.local_port,
+                "id": c.id,
+                "name": c.name,
+                "host": c.host,
+                "port": c.port,
+                "forwards": forwards,
                 "status": status,
                 "error": error,
                 "uptime_secs": uptime,
@@ -66,10 +76,10 @@ async fn list_tunnels(
         })
         .collect();
 
-    Ok(Json(json!({ "tunnels": tunnels })))
+    Ok(Json(json!({ "connections": connections })))
 }
 
-async fn get_tunnel_status(
+async fn get_connection_status(
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<RwLock<AppState>>>,
@@ -77,11 +87,20 @@ async fn get_tunnel_status(
     let state = state.read().await;
     check_token(&headers, &state).await?;
 
-    let status = state.tunnel_manager.get_status(&id);
+    let statuses = state.tunnel_manager.get_statuses();
+    let status = statuses.get(&id).map(|(s, e, u)| json!({
+        "status": s,
+        "error": e,
+        "uptime_secs": u,
+    })).unwrap_or_else(|| json!({
+        "status": "disconnected",
+        "error": null,
+        "uptime_secs": null,
+    }));
     Ok(Json(json!({ "id": id, "status": status })))
 }
 
-async fn stop_tunnel(
+async fn disconnect_connection(
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<RwLock<AppState>>>,

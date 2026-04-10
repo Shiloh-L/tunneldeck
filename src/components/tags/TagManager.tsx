@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, X, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 import * as api from '@/lib/tauri';
 
 const PRESET_COLORS = [
@@ -22,7 +22,7 @@ interface TagManagerProps {
 }
 
 export function TagManager({ onClose }: TagManagerProps) {
-  const { tags, loadTags, loadTunnels } = useTunnelStore();
+  const { tags, loadTags, loadConnections } = useConnectionStore();
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [adding, setAdding] = useState(false);
@@ -42,7 +42,7 @@ export function TagManager({ onClose }: TagManagerProps) {
   const handleDelete = async (tagId: string) => {
     await api.deleteTag(tagId);
     await loadTags();
-    await loadTunnels();
+    await loadConnections();
   };
 
   return (

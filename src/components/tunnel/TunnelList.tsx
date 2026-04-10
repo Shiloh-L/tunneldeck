@@ -1,18 +1,18 @@
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 import { TunnelCard } from './TunnelCard';
 import { cn } from '@/lib/utils';
 import { Network, Plug } from 'lucide-react';
-import type { TunnelInfo } from '@/types';
+import type { ConnectionInfo } from '@/types';
 
 interface TunnelListProps {
-  onEdit: (tunnel: TunnelInfo) => void;
-  onConnect: (tunnel: TunnelInfo) => void;
+  onEdit: (conn: ConnectionInfo) => void;
+  onConnect: (conn: ConnectionInfo) => void;
 }
 
 export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
-  const { filteredTunnels, selectedTagId, tags, isLoading } = useTunnelStore();
+  const { filteredConnections, selectedTagId, tags, isLoading } = useConnectionStore();
 
-  const tunnels = filteredTunnels();
+  const connections = filteredConnections();
   const tagName =
     selectedTagId && tags.find((t) => t.id === selectedTagId)?.name;
 
@@ -24,7 +24,7 @@ export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
     );
   }
 
-  if (tunnels.length === 0) {
+  if (connections.length === 0) {
     return (
       <div className='flex-1 flex items-center justify-center'>
         <div className='text-center space-y-3'>
@@ -33,10 +33,10 @@ export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
           </div>
           <div>
             <p className='text-sm font-medium text-text-secondary'>
-              {tagName ? `"${tagName}" 标签下没有隧道` : '还没有隧道'}
+              {tagName ? `"${tagName}" 标签下没有连接` : '还没有连接'}
             </p>
             <p className='text-xs text-text-muted mt-1'>
-              点击左侧「新建隧道」开始使用
+              点击左侧「新建连接」开始使用
             </p>
           </div>
         </div>
@@ -51,9 +51,9 @@ export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
         <div className='flex items-center gap-2'>
           <Network size={14} className='text-text-muted' />
           <h2 className='text-sm font-semibold text-text-primary'>
-            {tagName ?? '全部隧道'}
+            {tagName ?? '全部连接'}
           </h2>
-          <span className='text-xs text-text-muted'>({tunnels.length})</span>
+          <span className='text-xs text-text-muted'>({connections.length})</span>
         </div>
       </div>
 
@@ -64,10 +64,10 @@ export function TunnelList({ onEdit, onConnect }: TunnelListProps) {
           'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3',
         )}
       >
-        {tunnels.map((tunnel) => (
+        {connections.map((conn) => (
           <TunnelCard
-            key={tunnel.id}
-            tunnel={tunnel}
+            key={conn.id}
+            connection={conn}
             onEdit={onEdit}
             onConnect={onConnect}
           />

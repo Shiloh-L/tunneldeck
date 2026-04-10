@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { X, Key, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as api from '@/lib/tauri';
-import type { TunnelInfo } from '@/types';
+import type { ConnectionInfo } from '@/types';
 
 interface ConnectDialogProps {
-  tunnel: TunnelInfo;
+  connection: ConnectionInfo;
   onClose: () => void;
 }
 
-export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
+export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
   const [password, setPassword] = useState('');
   const [savePassword, setSavePassword] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -18,7 +18,7 @@ export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
 
   // Check if password is already stored
   useState(() => {
-    api.hasStoredPassword(tunnel.id).then((v) => setHasStored(v));
+    api.hasStoredPassword(connection.id).then((v) => setHasStored(v));
   });
 
   const handleConnect = async () => {
@@ -26,9 +26,8 @@ export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
     setConnecting(true);
 
     try {
-      // If password stored and user didn't enter new one, connect without password param
       if (hasStored && !password) {
-        await api.startTunnel(tunnel.id);
+        await api.connectTunnel(connection.id);
       } else {
         if (!password) {
           setError('请输入密码');
@@ -36,9 +35,9 @@ export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
           return;
         }
         if (savePassword) {
-          await api.saveTunnelPassword(tunnel.id, password);
+          await api.saveConnectionPassword(connection.id, password);
         }
-        await api.startTunnel(tunnel.id, password);
+        await api.connectTunnel(connection.id, password);
       }
       onClose();
     } catch (err) {
@@ -65,7 +64,7 @@ export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
           <div className='flex items-center gap-2'>
             <Key size={14} className='text-accent' />
             <h2 className='text-sm font-semibold text-text-primary'>
-              连接隧道
+              连接
             </h2>
           </div>
           <button
@@ -77,10 +76,13 @@ export function ConnectDialog({ tunnel, onClose }: ConnectDialogProps) {
         </div>
 
         <div className='px-5 pb-5 space-y-4'>
-          {/* Tunnel name */}
+          {/* Connection name */}
           <p className='text-xs text-text-secondary'>
             正在连接{' '}
-            <span className='font-medium text-text-primary'>{tunnel.name}</span>
+            <span className='font-medium text-text-primary'>{connection.name}</span>
+            <span className='text-text-muted ml-1'>
+              ({connection.forwards.filter((f) => f.enabled).length} 个转发规则)
+            </span>
           </p>
 
           {/* Password field */}

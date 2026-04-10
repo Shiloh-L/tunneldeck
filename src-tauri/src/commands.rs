@@ -9,26 +9,26 @@ use crate::state::AppState;
 use crate::store::credential;
 use crate::tunnel::types::*;
 
-// ─── Tunnel CRUD ──────────────────────────────────────────────────
+// ─── Connection CRUD ──────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn list_tunnels(
+pub async fn list_connections(
     state: State<'_, Arc<RwLock<AppState>>>,
-) -> Result<Vec<TunnelInfo>, String> {
+) -> Result<Vec<ConnectionInfo>, String> {
     let state = state.read().await;
     let statuses = state.tunnel_manager.get_statuses();
 
-    let infos: Vec<TunnelInfo> = state
-        .tunnels_file
-        .tunnels
+    let infos: Vec<ConnectionInfo> = state
+        .connections_file
+        .connections
         .iter()
-        .map(|t| {
+        .map(|c| {
             let (status, error, uptime) = statuses
-                .get(&t.id)
+                .get(&c.id)
                 .cloned()
-                .unwrap_or((TunnelStatus::Disconnected, None, None));
-            TunnelInfo {
-                config: t.clone(),
+                .unwrap_or((ConnectionStatus::Disconnected, None, None));
+            ConnectionInfo {
+                config: c.clone(),
                 status,
                 error_message: error,
                 uptime_secs: uptime,
@@ -40,59 +40,71 @@ pub async fn list_tunnels(
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateTunnelRequest {
+pub struct CreateForwardRuleRequest {
     pub name: String,
-    pub jump_host: String,
-    pub jump_port: u16,
-    pub username: String,
+    pub local_port: u16,
     pub target_host: String,
     pub target_port: u16,
-    pub local_port: u16,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateConnectionRequest {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
     pub password: String,
+    pub forwards: Vec<CreateForwardRuleRequest>,
     pub auto_connect: bool,
     pub tag_ids: Vec<String>,
 }
 
 #[tauri::command]
-pub async fn create_tunnel(
+pub async fn create_connection(
     state: State<'_, Arc<RwLock<AppState>>>,
-    req: CreateTunnelRequest,
-) -> Result<TunnelConfig, String> {
+    req: CreateConnectionRequest,
+) -> Result<Connection, String> {
     let mut state = state.write().await;
 
-    let mut config = TunnelConfig::new(
-        req.name,
-        req.jump_host,
-        req.jump_port,
-        req.username,
-        req.target_host,
-        req.target_port,
-        req.local_port,
-    );
+    let mut config = Connection::new(req.name, req.host, req.port, req.username);
     config.auto_connect = req.auto_connect;
     config.tag_ids = req.tag_ids;
+    config.forwards = req
+        .forwards
+        .into_iter()
+        .map(|f| ForwardRule::new(f.name, f.local_port, f.target_host, f.target_port))
+        .collect();
 
     // Save password to Windows Credential Manager
     credential::save_password(&config.id, &req.password).map_err(|e| e.to_string())?;
 
     // Add to in-memory state
-    state.tunnels_file.tunnels.push(config.clone());
+    state.connections_file.connections.push(config.clone());
 
     // Persist to disk
     state
         .json_store
-        .save("tunnels.json", &state.tunnels_file)
+        .save("connections.json", &state.connections_file)
         .await
         .map_err(|e| e.to_string())?;
 
     // Audit log
+    let fwd_summary: Vec<String> = config.forwards.iter().map(|f| {
+        format!("localhost:{} -> {}:{}", f.local_port, f.target_host, f.target_port)
+    }).collect();
     let _ = state
         .audit
         .append(&AuditEntry {
-            tunnel_id: config.id.clone(),
-            tunnel_name: config.name.clone(),
+            connection_id: config.id.clone(),
+            connection_name: config.name.clone(),
             event: AuditEvent::Created,
-            message: format!("Tunnel created: localhost:{} -> {}:{}", config.local_port, config.target_host, config.target_port),
+            message: format!("Connection created with {} forwards: {}", config.forwards.len(), fwd_summary.join(", ")),
             ts: chrono::Utc::now().to_rfc3339(),
         })
         .await;
@@ -101,22 +113,22 @@ pub async fn create_tunnel(
 }
 
 #[tauri::command]
-pub async fn update_tunnel(
+pub async fn update_connection(
     state: State<'_, Arc<RwLock<AppState>>>,
-    tunnel: TunnelConfig,
+    connection: Connection,
 ) -> Result<(), String> {
     let mut state = state.write().await;
 
-    if let Some(existing) = state.tunnels_file.tunnels.iter_mut().find(|t| t.id == tunnel.id) {
-        *existing = tunnel.clone();
+    if let Some(existing) = state.connections_file.connections.iter_mut().find(|c| c.id == connection.id) {
+        *existing = connection.clone();
         existing.updated_at = chrono::Utc::now().to_rfc3339();
     } else {
-        return Err("Tunnel not found".to_string());
+        return Err("Connection not found".to_string());
     }
 
     state
         .json_store
-        .save("tunnels.json", &state.tunnels_file)
+        .save("connections.json", &state.connections_file)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -124,42 +136,42 @@ pub async fn update_tunnel(
 }
 
 #[tauri::command]
-pub async fn delete_tunnel(
+pub async fn delete_connection(
     state: State<'_, Arc<RwLock<AppState>>>,
-    tunnel_id: String,
+    connection_id: String,
 ) -> Result<(), String> {
     let mut state = state.write().await;
 
     // Stop if running
-    let _ = state.tunnel_manager.stop(&tunnel_id).await;
+    let _ = state.tunnel_manager.stop(&connection_id).await;
 
     // Remove credential
-    let _ = credential::delete_password(&tunnel_id);
+    let _ = credential::delete_password(&connection_id);
 
     // Remove from config
     let name = state
-        .tunnels_file
-        .tunnels
+        .connections_file
+        .connections
         .iter()
-        .find(|t| t.id == tunnel_id)
-        .map(|t| t.name.clone())
+        .find(|c| c.id == connection_id)
+        .map(|c| c.name.clone())
         .unwrap_or_default();
 
-    state.tunnels_file.tunnels.retain(|t| t.id != tunnel_id);
+    state.connections_file.connections.retain(|c| c.id != connection_id);
 
     state
         .json_store
-        .save("tunnels.json", &state.tunnels_file)
+        .save("connections.json", &state.connections_file)
         .await
         .map_err(|e| e.to_string())?;
 
     let _ = state
         .audit
         .append(&AuditEntry {
-            tunnel_id: tunnel_id.clone(),
-            tunnel_name: name,
+            connection_id: connection_id.clone(),
+            connection_name: name,
             event: AuditEvent::Deleted,
-            message: "Tunnel deleted".into(),
+            message: "Connection deleted".into(),
             ts: chrono::Utc::now().to_rfc3339(),
         })
         .await;
@@ -167,31 +179,31 @@ pub async fn delete_tunnel(
     Ok(())
 }
 
-// ─── Tunnel Control ───────────────────────────────────────────────
+// ─── Connection Control ───────────────────────────────────────────
 
 #[tauri::command]
-pub async fn start_tunnel(
+pub async fn connect_tunnel(
     app: AppHandle,
     state: State<'_, Arc<RwLock<AppState>>>,
-    tunnel_id: String,
+    connection_id: String,
     password: Option<String>,
 ) -> Result<(), String> {
     let mut state = state.write().await;
 
     let config = state
-        .tunnels_file
-        .tunnels
+        .connections_file
+        .connections
         .iter()
-        .find(|t| t.id == tunnel_id)
+        .find(|c| c.id == connection_id)
         .cloned()
-        .ok_or_else(|| "Tunnel not found".to_string())?;
+        .ok_or_else(|| "Connection not found".to_string())?;
 
     // Get password: from parameter or from credential store
     let pwd = match password {
         Some(p) => p,
-        None => credential::load_password(&tunnel_id)
+        None => credential::load_password(&connection_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "No password stored for this tunnel".to_string())?,
+            .ok_or_else(|| "No password stored for this connection".to_string())?,
     };
 
     // Create auth status channel to update UI during Duo Push
@@ -199,12 +211,11 @@ pub async fn start_tunnel(
 
     // Forward auth status events to the frontend via Tauri events
     let app_handle = app.clone();
-    let tid = tunnel_id.clone();
+    let cid = connection_id.clone();
     tokio::spawn(async move {
         while let Some(status) = auth_rx.recv().await {
-            let event_name = "tunnel-auth-status";
             let payload = serde_json::json!({
-                "tunnelId": tid,
+                "connectionId": cid,
                 "status": match &status {
                     AuthStatus::PromptingPassword => "prompting_password",
                     AuthStatus::WaitingDuoPush => "waiting_duo_push",
@@ -216,7 +227,7 @@ pub async fn start_tunnel(
                     _ => String::new(),
                 },
             });
-            let _ = app_handle.emit(event_name, payload);
+            let _ = app_handle.emit("connection-auth-status", payload);
         }
     });
 
@@ -230,14 +241,14 @@ pub async fn start_tunnel(
 }
 
 #[tauri::command]
-pub async fn stop_tunnel(
+pub async fn disconnect_tunnel(
     state: State<'_, Arc<RwLock<AppState>>>,
-    tunnel_id: String,
+    connection_id: String,
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state
         .tunnel_manager
-        .stop(&tunnel_id)
+        .stop(&connection_id)
         .await
         .map_err(|e| e.to_string())
 }
@@ -275,26 +286,26 @@ pub async fn delete_tag(
     let mut state = state.write().await;
     state.tags_file.tags.retain(|t| t.id != tag_id);
 
-    // Remove tag from all tunnels
-    for tunnel in &mut state.tunnels_file.tunnels {
-        tunnel.tag_ids.retain(|id| id != &tag_id);
+    // Remove tag from all connections
+    for conn in &mut state.connections_file.connections {
+        conn.tag_ids.retain(|id| id != &tag_id);
     }
 
     state.json_store.save("tags.json", &state.tags_file).await.map_err(|e| e.to_string())?;
-    state.json_store.save("tunnels.json", &state.tunnels_file).await.map_err(|e| e.to_string())?;
+    state.json_store.save("connections.json", &state.connections_file).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 // ─── Password Management ─────────────────────────────────────────
 
 #[tauri::command]
-pub async fn save_tunnel_password(tunnel_id: String, password: String) -> Result<(), String> {
-    credential::save_password(&tunnel_id, &password).map_err(|e| e.to_string())
+pub async fn save_connection_password(connection_id: String, password: String) -> Result<(), String> {
+    credential::save_password(&connection_id, &password).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn has_stored_password(tunnel_id: String) -> Result<bool, String> {
-    let pwd = credential::load_password(&tunnel_id).map_err(|e| e.to_string())?;
+pub async fn has_stored_password(connection_id: String) -> Result<bool, String> {
+    let pwd = credential::load_password(&connection_id).map_err(|e| e.to_string())?;
     Ok(pwd.is_some())
 }
 
@@ -344,7 +355,7 @@ pub async fn export_config(
     state: State<'_, Arc<RwLock<AppState>>>,
 ) -> Result<String, String> {
     let state = state.read().await;
-    import_export::export_config(&state.tunnels_file, &state.tags_file).map_err(|e| e.to_string())
+    import_export::export_config(&state.connections_file, &state.tags_file).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -355,12 +366,12 @@ pub async fn import_config(
     let data = import_export::import_config(&json).map_err(|e| e.to_string())?;
     let mut state = state.write().await;
 
-    let count = data.tunnels.len() as u32;
+    let count = data.connections.len() as u32;
 
-    // Merge: add tunnels that don't already exist (by name)
-    for tunnel in data.tunnels {
-        if !state.tunnels_file.tunnels.iter().any(|t| t.name == tunnel.name) {
-            state.tunnels_file.tunnels.push(tunnel);
+    // Merge: add connections that don't already exist (by name)
+    for conn in data.connections {
+        if !state.connections_file.connections.iter().any(|c| c.name == conn.name) {
+            state.connections_file.connections.push(conn);
         }
     }
 
@@ -371,7 +382,7 @@ pub async fn import_config(
         }
     }
 
-    state.json_store.save("tunnels.json", &state.tunnels_file).await.map_err(|e| e.to_string())?;
+    state.json_store.save("connections.json", &state.connections_file).await.map_err(|e| e.to_string())?;
     state.json_store.save("tags.json", &state.tags_file).await.map_err(|e| e.to_string())?;
 
     Ok(count)

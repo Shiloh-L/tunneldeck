@@ -8,26 +8,25 @@ import { DuoPushDialog } from '@/components/tunnel/DuoPushDialog';
 import { TagManager } from '@/components/tags/TagManager';
 import { LogViewer } from '@/components/logs/LogViewer';
 import { Settings } from '@/components/settings/Settings';
-import { useTunnelStore, initEventListeners } from '@/stores/tunnelStore';
-import type { TunnelInfo } from '@/types';
+import { useConnectionStore, initEventListeners } from '@/stores/tunnelStore';
+import type { ConnectionInfo } from '@/types';
 
 type Dialog =
   | { type: 'none' }
-  | { type: 'new-tunnel' }
-  | { type: 'edit-tunnel'; tunnel: TunnelInfo }
-  | { type: 'connect'; tunnel: TunnelInfo }
+  | { type: 'new-connection' }
+  | { type: 'edit-connection'; connection: ConnectionInfo }
+  | { type: 'connect'; connection: ConnectionInfo }
   | { type: 'tags' }
   | { type: 'logs' }
   | { type: 'settings' };
 
 export default function App() {
-  const { loadTunnels, loadTags } = useTunnelStore();
+  const { loadConnections, loadTags } = useConnectionStore();
   const [dialog, setDialog] = useState<Dialog>({ type: 'none' });
 
   useEffect(() => {
-    // Initialize event listeners and load data
     initEventListeners();
-    loadTunnels();
+    loadConnections();
     loadTags();
   }, []);
 
@@ -37,34 +36,34 @@ export default function App() {
 
       <div className='flex flex-1 min-h-0'>
         <Sidebar
-          onNewTunnel={() => setDialog({ type: 'new-tunnel' })}
+          onNewConnection={() => setDialog({ type: 'new-connection' })}
           onOpenSettings={() => setDialog({ type: 'settings' })}
           onOpenLogs={() => setDialog({ type: 'logs' })}
         />
 
         <main className='flex-1 flex flex-col min-w-0'>
           <TunnelList
-            onEdit={(tunnel) => setDialog({ type: 'edit-tunnel', tunnel })}
-            onConnect={(tunnel) => setDialog({ type: 'connect', tunnel })}
+            onEdit={(conn) => setDialog({ type: 'edit-connection', connection: conn })}
+            onConnect={(conn) => setDialog({ type: 'connect', connection: conn })}
           />
         </main>
       </div>
 
       {/* ─── Dialogs ───────────────────────────────────────────── */}
-      {dialog.type === 'new-tunnel' && (
+      {dialog.type === 'new-connection' && (
         <TunnelForm onClose={() => setDialog({ type: 'none' })} />
       )}
 
-      {dialog.type === 'edit-tunnel' && (
+      {dialog.type === 'edit-connection' && (
         <TunnelForm
-          tunnel={dialog.tunnel}
+          connection={dialog.connection}
           onClose={() => setDialog({ type: 'none' })}
         />
       )}
 
       {dialog.type === 'connect' && (
         <ConnectDialog
-          tunnel={dialog.tunnel}
+          connection={dialog.connection}
           onClose={() => setDialog({ type: 'none' })}
         />
       )}
@@ -81,7 +80,6 @@ export default function App() {
         <Settings onClose={() => setDialog({ type: 'none' })} />
       )}
 
-      {/* Duo Push dialog is global — shows whenever DuoPush is active */}
       <DuoPushDialog />
     </div>
   );

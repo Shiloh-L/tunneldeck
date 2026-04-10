@@ -1,31 +1,48 @@
 import { useState } from 'react';
-import { X, Server, Lock, Globe, Waypoints } from 'lucide-react';
+import { X, Server, Globe, Waypoints, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 import * as api from '@/lib/tauri';
-import type { TunnelInfo } from '@/types';
+import type { ConnectionInfo, ForwardRule } from '@/types';
 
 interface TunnelFormProps {
-  tunnel?: TunnelInfo; // if provided, we're editing
+  connection?: ConnectionInfo; // if provided, we're editing
   onClose: () => void;
 }
 
-export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
-  const { tags, loadTunnels } = useTunnelStore();
-  const isEditing = !!tunnel;
+interface ForwardDraft {
+  id?: string; // exists if editing
+  name: string;
+  local_port: number;
+  target_host: string;
+  target_port: number;
+  enabled: boolean;
+}
+
+export function TunnelForm({ connection, onClose }: TunnelFormProps) {
+  const { tags, loadConnections } = useConnectionStore();
+  const isEditing = !!connection;
 
   const [form, setForm] = useState({
-    name: tunnel?.name ?? '',
-    jump_host: tunnel?.jump_host ?? '',
-    jump_port: tunnel?.jump_port ?? 22,
-    username: tunnel?.username ?? '',
-    target_host: tunnel?.target_host ?? '',
-    target_port: tunnel?.target_port ?? 3306,
-    local_port: tunnel?.local_port ?? 13306,
+    name: connection?.name ?? '',
+    host: connection?.host ?? '',
+    port: connection?.port ?? 22,
+    username: connection?.username ?? '',
     password: '',
-    auto_connect: tunnel?.auto_connect ?? false,
-    tag_ids: tunnel?.tag_ids ?? [],
+    auto_connect: connection?.auto_connect ?? false,
+    tag_ids: connection?.tag_ids ?? [],
   });
+
+  const [forwards, setForwards] = useState<ForwardDraft[]>(
+    connection?.forwards?.map((f) => ({
+      id: f.id,
+      name: f.name,
+      local_port: f.local_port,
+      target_host: f.target_host,
+      target_port: f.target_port,
+      enabled: f.enabled,
+    })) ?? [{ name: '', local_port: 13306, target_host: '', target_port: 3306, enabled: true }],
+  );
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,44 +50,66 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
   const update = (patch: Partial<typeof form>) =>
     setForm((prev) => ({ ...prev, ...patch }));
 
+  const updateForward = (index: number, patch: Partial<ForwardDraft>) =>
+    setForwards((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+
+  const addForward = () =>
+    setForwards((prev) => [
+      ...prev,
+      { name: '', local_port: 0, target_host: '', target_port: 0, enabled: true },
+    ]);
+
+  const removeForward = (index: number) =>
+    setForwards((prev) => prev.filter((_, i) => i !== index));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
 
     try {
-      if (isEditing && tunnel) {
-        await api.updateTunnel({
-          ...tunnel,
+      if (isEditing && connection) {
+        const updatedForwards: ForwardRule[] = forwards.map((f) => ({
+          id: f.id ?? crypto.randomUUID(),
+          name: f.name,
+          local_port: f.local_port,
+          target_host: f.target_host,
+          target_port: f.target_port,
+          enabled: f.enabled,
+        }));
+        await api.updateConnection({
+          ...connection,
           name: form.name,
-          jump_host: form.jump_host,
-          jump_port: form.jump_port,
+          host: form.host,
+          port: form.port,
           username: form.username,
-          target_host: form.target_host,
-          target_port: form.target_port,
-          local_port: form.local_port,
+          forwards: updatedForwards,
           auto_connect: form.auto_connect,
           tag_ids: form.tag_ids,
           updated_at: new Date().toISOString(),
         });
         if (form.password) {
-          await api.saveTunnelPassword(tunnel.id, form.password);
+          await api.saveConnectionPassword(connection.id, form.password);
         }
       } else {
-        await api.createTunnel({
+        await api.createConnection({
           name: form.name,
-          jump_host: form.jump_host,
-          jump_port: form.jump_port,
+          host: form.host,
+          port: form.port,
           username: form.username,
-          target_host: form.target_host,
-          target_port: form.target_port,
-          local_port: form.local_port,
           password: form.password,
+          forwards: forwards.map((f) => ({
+            name: f.name,
+            local_port: f.local_port,
+            target_host: f.target_host,
+            target_port: f.target_port,
+            enabled: f.enabled,
+          })),
           auto_connect: form.auto_connect,
           tag_ids: form.tag_ids,
         });
       }
-      await loadTunnels();
+      await loadConnections();
       onClose();
     } catch (err) {
       setError(String(err));
@@ -98,7 +137,7 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
       {/* Dialog */}
       <div
         className={cn(
-          'relative w-[480px] max-h-[85vh] overflow-y-auto',
+          'relative w-[520px] max-h-[85vh] overflow-y-auto',
           'bg-bg-secondary border border-border rounded-2xl shadow-2xl',
           'animate-fade-in',
         )}
@@ -106,7 +145,7 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
         {/* Header */}
         <div className='flex items-center justify-between px-5 pt-5 pb-3'>
           <h2 className='text-base font-semibold text-text-primary'>
-            {isEditing ? '编辑隧道' : '新建隧道'}
+            {isEditing ? '编辑连接' : '新建连接'}
           </h2>
           <button
             onClick={onClose}
@@ -118,12 +157,12 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
 
         <form onSubmit={handleSubmit} className='px-5 pb-5 space-y-4'>
           {/* Name */}
-          <FormField label='隧道名称' icon={<Waypoints size={13} />}>
+          <FormField label='连接名称' icon={<Waypoints size={13} />}>
             <input
               type='text'
               value={form.name}
               onChange={(e) => update({ name: e.target.value })}
-              placeholder='生产环境 MySQL'
+              placeholder='生产环境跳板机'
               required
               className={inputClass}
             />
@@ -136,8 +175,8 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
               <div className='col-span-2'>
                 <input
                   type='text'
-                  value={form.jump_host}
-                  onChange={(e) => update({ jump_host: e.target.value })}
+                  value={form.host}
+                  onChange={(e) => update({ host: e.target.value })}
                   placeholder='bastion.example.com'
                   required
                   className={inputClass}
@@ -145,8 +184,8 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
               </div>
               <input
                 type='number'
-                value={form.jump_port}
-                onChange={(e) => update({ jump_port: Number(e.target.value) })}
+                value={form.port}
+                onChange={(e) => update({ port: Number(e.target.value) })}
                 placeholder='22'
                 min={1}
                 max={65535}
@@ -173,47 +212,78 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
             </div>
           </div>
 
-          {/* Target */}
+          {/* Forward Rules */}
           <div className='space-y-2'>
-            <SectionLabel icon={<Globe size={13} />} label='目标服务' />
-            <div className='grid grid-cols-3 gap-2'>
-              <div className='col-span-2'>
+            <div className='flex items-center justify-between'>
+              <SectionLabel icon={<Globe size={13} />} label='端口转发规则' />
+              <button
+                type='button'
+                onClick={addForward}
+                className='flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors'
+              >
+                <Plus size={12} />
+                添加规则
+              </button>
+            </div>
+
+            {forwards.map((fwd, i) => (
+              <div key={i} className='relative rounded-lg border border-border bg-bg-card p-3 space-y-2'>
+                {forwards.length > 1 && (
+                  <button
+                    type='button'
+                    onClick={() => removeForward(i)}
+                    className='absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-all'
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
                 <input
                   type='text'
-                  value={form.target_host}
-                  onChange={(e) => update({ target_host: e.target.value })}
-                  placeholder='10.0.1.50'
-                  required
-                  className={inputClass}
+                  value={fwd.name}
+                  onChange={(e) => updateForward(i, { name: e.target.value })}
+                  placeholder={`规则名称 (如: MySQL #${i + 1})`}
+                  className={cn(inputClass, 'pr-8')}
                 />
+                <div className='grid grid-cols-5 gap-2 items-center'>
+                  <div className='col-span-1'>
+                    <input
+                      type='number'
+                      value={fwd.local_port || ''}
+                      onChange={(e) => updateForward(i, { local_port: Number(e.target.value) })}
+                      placeholder='本地端口'
+                      min={1024}
+                      max={65535}
+                      required
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className='flex items-center justify-center text-text-muted text-xs'>→</div>
+                  <div className='col-span-2'>
+                    <input
+                      type='text'
+                      value={fwd.target_host}
+                      onChange={(e) => updateForward(i, { target_host: e.target.value })}
+                      placeholder='目标主机'
+                      required
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className='col-span-1'>
+                    <input
+                      type='number'
+                      value={fwd.target_port || ''}
+                      onChange={(e) => updateForward(i, { target_port: Number(e.target.value) })}
+                      placeholder='端口'
+                      min={1}
+                      max={65535}
+                      required
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
               </div>
-              <input
-                type='number'
-                value={form.target_port}
-                onChange={(e) =>
-                  update({ target_port: Number(e.target.value) })
-                }
-                placeholder='3306'
-                min={1}
-                max={65535}
-                className={inputClass}
-              />
-            </div>
+            ))}
           </div>
-
-          {/* Local port */}
-          <FormField label='本地端口' icon={<Lock size={13} />}>
-            <input
-              type='number'
-              value={form.local_port}
-              onChange={(e) => update({ local_port: Number(e.target.value) })}
-              placeholder='13306'
-              min={1024}
-              max={65535}
-              required
-              className={inputClass}
-            />
-          </FormField>
 
           {/* Tags */}
           {tags.length > 0 && (
@@ -301,7 +371,7 @@ export function TunnelForm({ tunnel, onClose }: TunnelFormProps) {
                 'transition-all disabled:opacity-50',
               )}
             >
-              {saving ? '保存中…' : isEditing ? '保存修改' : '创建隧道'}
+              {saving ? '保存中…' : isEditing ? '保存修改' : '创建连接'}
             </button>
           </div>
         </form>

@@ -1,33 +1,33 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  TunnelInfo,
-  TunnelConfig,
-  CreateTunnelRequest,
+  ConnectionInfo,
+  Connection,
+  CreateConnectionRequest,
   Tag,
   AuditEntry,
   AppSettings,
 } from '@/types';
 
-// ─── Tunnel CRUD ──────────────────────────────────────────────────
+// ─── Connection CRUD ──────────────────────────────────────────────
 
-export const listTunnels = () => invoke<TunnelInfo[]>('list_tunnels');
+export const listConnections = () => invoke<ConnectionInfo[]>('list_connections');
 
-export const createTunnel = (req: CreateTunnelRequest) =>
-  invoke<TunnelConfig>('create_tunnel', { req });
+export const createConnection = (req: CreateConnectionRequest) =>
+  invoke<Connection>('create_connection', { req });
 
-export const updateTunnel = (tunnel: TunnelConfig) =>
-  invoke<void>('update_tunnel', { tunnel });
+export const updateConnection = (connection: Connection) =>
+  invoke<void>('update_connection', { connection });
 
-export const deleteTunnel = (tunnelId: string) =>
-  invoke<void>('delete_tunnel', { tunnelId });
+export const deleteConnection = (connectionId: string) =>
+  invoke<void>('delete_connection', { connectionId });
 
-// ─── Tunnel Control ───────────────────────────────────────────────
+// ─── Connection Control ───────────────────────────────────────────
 
-export const startTunnel = (tunnelId: string, password?: string) =>
-  invoke<void>('start_tunnel', { tunnelId, password: password ?? null });
+export const connectTunnel = (connectionId: string, password?: string) =>
+  invoke<void>('connect_tunnel', { connectionId, password: password ?? null });
 
-export const stopTunnel = (tunnelId: string) =>
-  invoke<void>('stop_tunnel', { tunnelId });
+export const disconnectTunnel = (connectionId: string) =>
+  invoke<void>('disconnect_tunnel', { connectionId });
 
 // ─── Tags ─────────────────────────────────────────────────────────
 
@@ -41,11 +41,11 @@ export const deleteTag = (tagId: string) =>
 
 // ─── Password ─────────────────────────────────────────────────────
 
-export const saveTunnelPassword = (tunnelId: string, password: string) =>
-  invoke<void>('save_tunnel_password', { tunnelId, password });
+export const saveConnectionPassword = (connectionId: string, password: string) =>
+  invoke<void>('save_connection_password', { connectionId, password });
 
-export const hasStoredPassword = (tunnelId: string) =>
-  invoke<boolean>('has_stored_password', { tunnelId });
+export const hasStoredPassword = (connectionId: string) =>
+  invoke<boolean>('has_stored_password', { connectionId });
 
 // ─── Audit Logs ───────────────────────────────────────────────────
 

@@ -7,32 +7,72 @@ use tokio::sync::watch;
 use tracing::{debug, error, info};
 
 use super::client::SshClient;
+use crate::tunnel::types::ForwardRule;
 
-/// Start a local port-forwarding tunnel.
-/// Binds `local_port` on localhost and forwards all connections through the SSH
-/// session to `target_host:target_port` via direct-tcpip.
-///
-/// Returns a shutdown sender: drop it or send () to stop the tunnel.
-pub async fn start_local_forward(
+/// Start local port-forwarding for multiple rules sharing one SSH session.
+/// Each enabled ForwardRule gets its own TcpListener on localhost.
+/// All listeners share the same SSH session and shutdown signal.
+pub async fn start_multi_forward(
     session: Handle<SshClient>,
-    local_port: u16,
-    target_host: String,
-    target_port: u16,
+    forwards: Vec<ForwardRule>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
-    let bind_addr: SocketAddr = ([127, 0, 0, 1], local_port).into();
-    let listener = TcpListener::bind(bind_addr)
-        .await
-        .with_context(|| format!("Failed to bind local port {}", local_port))?;
-
-    info!(
-        "Local forward: localhost:{} -> {}:{} via SSH",
-        local_port, target_host, target_port
-    );
-
-    // Wrap session in Arc so we can share across spawned tasks
     let session = Arc::new(session);
+    let enabled: Vec<_> = forwards.into_iter().filter(|f| f.enabled).collect();
 
+    if enabled.is_empty() {
+        return Err(anyhow::anyhow!("No enabled forward rules"));
+    }
+
+    // Bind all listeners first (fail fast if any port is in use)
+    let mut listeners = Vec::with_capacity(enabled.len());
+    for rule in &enabled {
+        let bind_addr: SocketAddr = ([127, 0, 0, 1], rule.local_port).into();
+        let listener = TcpListener::bind(bind_addr)
+            .await
+            .with_context(|| format!("Failed to bind local port {} ({})", rule.local_port, rule.name))?;
+        info!(
+            "Forward: localhost:{} -> {}:{} [{}]",
+            rule.local_port, rule.target_host, rule.target_port, rule.name
+        );
+        listeners.push((listener, rule.clone()));
+    }
+
+    // Spawn an accept loop for each listener
+    let mut handles = Vec::with_capacity(listeners.len());
+    for (listener, rule) in listeners {
+        let session = session.clone();
+        let shutdown_rx = shutdown_rx.clone();
+        handles.push(tokio::spawn(accept_loop(
+            listener,
+            session,
+            rule.target_host,
+            rule.target_port,
+            rule.local_port,
+            shutdown_rx,
+        )));
+    }
+
+    // Wait for shutdown signal, then all tasks will exit
+    let _ = shutdown_rx.changed().await;
+
+    // Wait for all accept loops to finish
+    for h in handles {
+        let _ = h.await;
+    }
+
+    Ok(())
+}
+
+/// Accept loop for a single forward rule.
+async fn accept_loop(
+    listener: TcpListener,
+    session: Arc<Handle<SshClient>>,
+    target_host: String,
+    target_port: u16,
+    local_port: u16,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
     loop {
         tokio::select! {
             accept_result = listener.accept() => {
@@ -65,14 +105,12 @@ pub async fn start_local_forward(
             }
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
-                    info!("Shutting down local forward on port {}", local_port);
+                    info!("Shutting down forward on port {}", local_port);
                     break;
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 /// Handle a single TCP connection: open direct-tcpip channel and bidirectionally

@@ -8,50 +8,50 @@ import {
   ArrowRight,
   Clock,
   Copy,
-  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { TunnelInfo, TunnelStatus } from '@/types';
+import type { ConnectionInfo, ConnectionStatus } from '@/types';
 import * as api from '@/lib/tauri';
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 
 interface TunnelCardProps {
-  tunnel: TunnelInfo;
-  onEdit: (tunnel: TunnelInfo) => void;
-  onConnect: (tunnel: TunnelInfo) => void;
+  connection: ConnectionInfo;
+  onEdit: (conn: ConnectionInfo) => void;
+  onConnect: (conn: ConnectionInfo) => void;
 }
 
-export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
+export function TunnelCard({ connection, onEdit, onConnect }: TunnelCardProps) {
   const [showMenu, setShowMenu] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const { tags, loadTunnels } = useTunnelStore();
+  const { tags, loadConnections } = useConnectionStore();
 
-  const tunnelTags = tags.filter((t) => tunnel.tag_ids.includes(t.id));
+  const connTags = tags.filter((t) => connection.tag_ids.includes(t.id));
+  const enabledForwards = connection.forwards.filter((f) => f.enabled);
 
   const isActive =
-    tunnel.status === 'connected' ||
-    tunnel.status === 'connecting' ||
-    tunnel.status === 'waitingduo' ||
-    tunnel.status === 'reconnecting';
+    connection.status === 'connected' ||
+    connection.status === 'connecting' ||
+    connection.status === 'waitingduo' ||
+    connection.status === 'reconnecting';
 
   const handleToggle = async () => {
     if (isActive) {
-      await api.stopTunnel(tunnel.id);
+      await api.disconnectTunnel(connection.id);
     } else {
-      onConnect(tunnel);
+      onConnect(connection);
     }
   };
 
   const handleDelete = async () => {
     setShowMenu(false);
-    await api.deleteTunnel(tunnel.id);
-    await loadTunnels();
+    await api.deleteConnection(connection.id);
+    await loadConnections();
   };
 
-  const handleCopyLocal = async () => {
-    await navigator.clipboard.writeText(`localhost:${tunnel.local_port}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const handleCopyAll = async () => {
+    const text = enabledForwards
+      .map((f) => `localhost:${f.local_port}`)
+      .join('\n');
+    await navigator.clipboard.writeText(text);
   };
 
   return (
@@ -59,9 +59,9 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
       className={cn(
         'group relative rounded-xl border transition-all duration-200',
         'animate-fade-in',
-        tunnel.status === 'connected'
+        connection.status === 'connected'
           ? 'border-success/20 bg-success/[0.03]'
-          : tunnel.status === 'error'
+          : connection.status === 'error'
             ? 'border-danger/20 bg-danger/[0.03]'
             : 'border-border bg-bg-card hover:bg-bg-card-hover hover:border-border-focus/30',
       )}
@@ -70,9 +70,9 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
         {/* Header row: name + status + controls */}
         <div className='flex items-start justify-between gap-3 mb-3'>
           <div className='flex items-center gap-2.5 min-w-0'>
-            <StatusDot status={tunnel.status} />
+            <StatusDot status={connection.status} />
             <h3 className='text-sm font-semibold text-text-primary truncate'>
-              {tunnel.name}
+              {connection.name}
             </h3>
           </div>
 
@@ -123,7 +123,7 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
                       label='编辑'
                       onClick={() => {
                         setShowMenu(false);
-                        onEdit(tunnel);
+                        onEdit(connection);
                       }}
                     />
                     <MenuButton
@@ -131,7 +131,7 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
                       label='复制地址'
                       onClick={() => {
                         setShowMenu(false);
-                        handleCopyLocal();
+                        handleCopyAll();
                       }}
                     />
                     <div className='h-px bg-border mx-2 my-1' />
@@ -148,40 +148,35 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
           </div>
         </div>
 
-        {/* Route info */}
-        <div
-          className={cn(
-            'flex items-center gap-2 text-xs font-mono',
-            'text-text-secondary mb-2',
-          )}
-        >
-          <button
-            onClick={handleCopyLocal}
-            className='hover:text-accent transition-colors flex items-center gap-1'
-            title='点击复制'
-          >
-            {copied ? (
-              <Check size={10} className='text-success' />
-            ) : (
-              <Copy size={10} className='opacity-0 group-hover:opacity-100' />
-            )}
-            <span>:{tunnel.local_port}</span>
-          </button>
-          <ArrowRight size={10} className='text-text-muted' />
-          <span className='truncate'>
-            {tunnel.target_host}:{tunnel.target_port}
-          </span>
+        {/* Forward rules */}
+        <div className='space-y-1 mb-2'>
+          {enabledForwards.map((fwd) => (
+            <div
+              key={fwd.id}
+              className={cn(
+                'flex items-center gap-2 text-xs font-mono',
+                'text-text-secondary',
+              )}
+            >
+              <span className='text-text-muted truncate max-w-[60px]'>{fwd.name || '—'}</span>
+              <span>:{fwd.local_port}</span>
+              <ArrowRight size={10} className='text-text-muted flex-shrink-0' />
+              <span className='truncate'>
+                {fwd.target_host}:{fwd.target_port}
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Jump host */}
         <div className='text-[11px] text-text-muted mb-2.5'>
-          via {tunnel.username}@{tunnel.jump_host}
+          via {connection.username}@{connection.host}
         </div>
 
         {/* Footer: tags + uptime */}
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-1 flex-wrap'>
-            {tunnelTags.map((tag) => (
+            {connTags.map((tag) => (
               <span
                 key={tag.id}
                 className='text-[10px] font-medium px-1.5 py-0.5 rounded-full'
@@ -195,16 +190,16 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
             ))}
           </div>
 
-          {tunnel.status === 'connected' && tunnel.uptime_secs != null && (
+          {connection.status === 'connected' && connection.uptime_secs != null && (
             <div className='flex items-center gap-1 text-[10px] text-text-muted'>
               <Clock size={10} />
-              <span>{formatUptime(tunnel.uptime_secs)}</span>
+              <span>{formatUptime(connection.uptime_secs)}</span>
             </div>
           )}
 
-          {tunnel.status === 'error' && tunnel.error_message && (
+          {connection.status === 'error' && connection.error_message && (
             <span className='text-[10px] text-danger truncate max-w-[180px]'>
-              {tunnel.error_message}
+              {connection.error_message}
             </span>
           )}
         </div>
@@ -215,7 +210,7 @@ export function TunnelCard({ tunnel, onEdit, onConnect }: TunnelCardProps) {
 
 // ─── Sub-components ───────────────────────────────────────────────
 
-function StatusDot({ status }: { status: TunnelStatus }) {
+function StatusDot({ status }: { status: ConnectionStatus }) {
   return <div className={cn('status-dot', `status-dot-${status}`)} />;
 }
 

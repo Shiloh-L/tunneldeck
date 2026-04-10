@@ -1,21 +1,28 @@
-// ─── Tunnel types (mirror Rust types) ─────────────────────────────
+// ─── Connection types (mirror Rust types) ─────────────────────────
 
-export interface TunnelConfig {
+export interface ForwardRule {
   id: string;
   name: string;
-  jump_host: string;
-  jump_port: number;
-  username: string;
+  local_port: number;
   target_host: string;
   target_port: number;
-  local_port: number;
+  enabled: boolean;
+}
+
+export interface Connection {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  forwards: ForwardRule[];
   auto_connect: boolean;
   tag_ids: string[];
   created_at: string;
   updated_at: string;
 }
 
-export type TunnelStatus =
+export type ConnectionStatus =
   | 'disconnected'
   | 'connecting'
   | 'waitingduo'
@@ -23,21 +30,19 @@ export type TunnelStatus =
   | 'reconnecting'
   | 'error';
 
-export interface TunnelInfo extends TunnelConfig {
-  status: TunnelStatus;
+export interface ConnectionInfo extends Connection {
+  status: ConnectionStatus;
   error_message?: string;
   uptime_secs?: number;
 }
 
-export interface CreateTunnelRequest {
+export interface CreateConnectionRequest {
   name: string;
-  jump_host: string;
-  jump_port: number;
+  host: string;
+  port: number;
   username: string;
-  target_host: string;
-  target_port: number;
-  local_port: number;
   password: string;
+  forwards: Omit<ForwardRule, 'id'>[];
   auto_connect: boolean;
   tag_ids: string[];
 }
@@ -62,8 +67,8 @@ export type AuditEvent =
   | 'updated';
 
 export interface AuditEntry {
-  tunnel_id: string;
-  tunnel_name: string;
+  connection_id: string;
+  connection_name: string;
   event: AuditEvent;
   message: string;
   ts: string;
@@ -83,14 +88,14 @@ export interface AppSettings {
 
 // ─── Auth status events from Rust ─────────────────────────────────
 
-export interface AuthStatusEvent {
-  tunnelId: string;
-  status: 'prompting_password' | 'waiting_duo_push' | 'success' | 'failed';
-  message: string;
+export interface ConnectionStatusEvent {
+  connectionId: string;
+  status: ConnectionStatus;
+  error?: string;
 }
 
-export interface TunnelStatusEvent {
-  tunnelId: string;
-  status: TunnelStatus;
-  error?: string;
+export interface AuthStatusEvent {
+  connectionId: string;
+  status: 'prompting_password' | 'waiting_duo_push' | 'success' | 'failed';
+  message: string;
 }

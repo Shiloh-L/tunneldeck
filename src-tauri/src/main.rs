@@ -27,8 +27,8 @@ fn main() {
                 let json_store = JsonStore::new(app_dir.clone());
                 json_store.init().await.expect("Failed to init data directory");
 
-                let tunnels_file: TunnelsFile =
-                    json_store.load("tunnels.json").await.unwrap_or_default();
+                let connections_file: ConnectionsFile =
+                    json_store.load("connections.json").await.unwrap_or_default();
                 let tags_file: TagsFile =
                     json_store.load("tags.json").await.unwrap_or_default();
                 let settings: AppSettings =
@@ -47,7 +47,7 @@ fn main() {
                     json_store,
                     audit,
                     tunnel_manager,
-                    tunnels_file,
+                    connections_file,
                     tags_file,
                     settings,
                     status_rx: Some(status_rx),
@@ -63,13 +63,13 @@ fn main() {
                     s.status_rx.take()
                 };
                 if let Some(ref mut rx) = rx {
-                    while let Some((tunnel_id, status, error)) = rx.recv().await {
+                    while let Some((connection_id, status, error)) = rx.recv().await {
                         let payload = serde_json::json!({
-                            "tunnelId": tunnel_id,
+                            "connectionId": connection_id,
                             "status": status,
                             "error": error,
                         });
-                        let _ = app_handle.emit("tunnel-status", payload);
+                        let _ = app_handle.emit("connection-status", payload);
                     }
                 }
             });
@@ -94,16 +94,16 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::list_tunnels,
-            commands::create_tunnel,
-            commands::update_tunnel,
-            commands::delete_tunnel,
-            commands::start_tunnel,
-            commands::stop_tunnel,
+            commands::list_connections,
+            commands::create_connection,
+            commands::update_connection,
+            commands::delete_connection,
+            commands::connect_tunnel,
+            commands::disconnect_tunnel,
             commands::list_tags,
             commands::create_tag,
             commands::delete_tag,
-            commands::save_tunnel_password,
+            commands::save_connection_password,
             commands::has_stored_password,
             commands::get_audit_logs,
             commands::get_settings,

@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Smartphone, Shield, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTunnelStore } from '@/stores/tunnelStore';
+import { useConnectionStore } from '@/stores/tunnelStore';
 
 const DUO_TIMEOUT_SECS = 60;
 
 export function DuoPushDialog() {
-  const { duoPushTunnelId, tunnels, setDuoPushTunnelId } = useTunnelStore();
+  const { duoPushConnectionId, connections, setDuoPushConnectionId } = useConnectionStore();
   const [countdown, setCountdown] = useState(DUO_TIMEOUT_SECS);
 
-  const tunnel = tunnels.find((t) => t.id === duoPushTunnelId);
+  const connection = connections.find((c) => c.id === duoPushConnectionId);
 
   useEffect(() => {
-    if (!duoPushTunnelId) {
+    if (!duoPushConnectionId) {
       setCountdown(DUO_TIMEOUT_SECS);
       return;
     }
@@ -29,9 +29,9 @@ export function DuoPushDialog() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [duoPushTunnelId]);
+  }, [duoPushConnectionId]);
 
-  if (!duoPushTunnelId || !tunnel) return null;
+  if (!duoPushConnectionId || !connection) return null;
 
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center animate-fade-in'>
@@ -48,7 +48,7 @@ export function DuoPushDialog() {
       >
         {/* Close */}
         <button
-          onClick={() => setDuoPushTunnelId(null)}
+          onClick={() => setDuoPushConnectionId(null)}
           className='absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-all'
         >
           <X size={14} />
@@ -69,10 +69,10 @@ export function DuoPushDialog() {
           等待 Duo Push 验证
         </h3>
 
-        {/* Tunnel name */}
+        {/* Connection name */}
         <p className='text-xs text-text-secondary mb-4'>
           正在连接{' '}
-          <span className='font-medium text-text-primary'>{tunnel.name}</span>
+          <span className='font-medium text-text-primary'>{connection.name}</span>
         </p>
 
         {/* Instructions */}

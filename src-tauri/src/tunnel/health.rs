@@ -22,8 +22,8 @@ impl HealthChecker {
     /// This is a placeholder that will be connected to the TunnelManager's status stream.
     pub async fn run(
         &self,
-        tunnel_id: String,
-        mut status_rx: mpsc::Receiver<(String, TunnelStatus, Option<String>)>,
+        connection_id: String,
+        mut status_rx: mpsc::Receiver<(String, ConnectionStatus, Option<String>)>,
         reconnect_tx: mpsc::Sender<String>,
     ) {
         let mut attempts = 0u32;
@@ -31,27 +31,27 @@ impl HealthChecker {
         loop {
             tokio::select! {
                 Some((id, status, _err)) = status_rx.recv() => {
-                    if id != tunnel_id {
+                    if id != connection_id {
                         continue;
                     }
                     match status {
-                        TunnelStatus::Connected => {
+                        ConnectionStatus::Connected => {
                             attempts = 0; // Reset on successful connection
                         }
-                        TunnelStatus::Error | TunnelStatus::Disconnected => {
+                        ConnectionStatus::Error | ConnectionStatus::Disconnected => {
                             if attempts < self.max_attempts {
                                 attempts += 1;
                                 let delay = self.backoff_delay(attempts);
                                 warn!(
-                                    "Tunnel {} lost connection (attempt {}/{}), reconnecting in {:?}",
-                                    tunnel_id, attempts, self.max_attempts, delay
+                                    "Connection {} lost (attempt {}/{}), reconnecting in {:?}",
+                                    connection_id, attempts, self.max_attempts, delay
                                 );
                                 tokio::time::sleep(delay).await;
-                                let _ = reconnect_tx.send(tunnel_id.clone()).await;
+                                let _ = reconnect_tx.send(connection_id.clone()).await;
                             } else {
                                 error!(
-                                    "Tunnel {} exceeded max reconnect attempts ({})",
-                                    tunnel_id, self.max_attempts
+                                    "Connection {} exceeded max reconnect attempts ({})",
+                                    connection_id, self.max_attempts
                                 );
                                 break;
                             }
@@ -61,7 +61,6 @@ impl HealthChecker {
                 }
                 _ = tokio::time::sleep(self.interval) => {
                     // Periodic keepalive check would go here
-                    // For now, we rely on the SSH connection's own keepalive
                 }
             }
         }
