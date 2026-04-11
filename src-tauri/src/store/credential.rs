@@ -1,102 +1,85 @@
-#[allow(unused_imports)]
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-#[cfg(windows)]
-use windows::Win32::Security::Credentials::{
-    CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS,
-    CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
-};
-#[cfg(windows)]
-use windows::core::PWSTR;
+/// Portable file-based credential store.
+/// Passwords are base64-encoded in `credentials.json` inside the data directory.
+static STORE: Mutex<Option<CredentialStore>> = Mutex::new(None);
 
-const CREDENTIAL_PREFIX: &str = "shelldeck/";
-
-/// Save a password to Windows Credential Manager.
-#[cfg(windows)]
-pub fn save_password(tunnel_id: &str, password: &str) -> Result<()> {
-    let target = format!("{}{}", CREDENTIAL_PREFIX, tunnel_id);
-    let target_wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
-    let password_bytes = password.as_bytes();
-
-    let mut cred = CREDENTIALW {
-        Flags: CRED_FLAGS(0),
-        Type: CRED_TYPE_GENERIC,
-        TargetName: PWSTR(target_wide.as_ptr() as *mut u16),
-        CredentialBlobSize: password_bytes.len() as u32,
-        CredentialBlob: password_bytes.as_ptr() as *mut u8,
-        Persist: CRED_PERSIST_LOCAL_MACHINE,
-        ..Default::default()
-    };
-
-    unsafe {
-        CredWriteW(&mut cred, 0).context("Failed to write credential to Windows Credential Manager")?;
-    }
-    Ok(())
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct CredentialsFile {
+    passwords: HashMap<String, String>,
 }
 
-/// Load a password from Windows Credential Manager.
-#[cfg(windows)]
-pub fn load_password(tunnel_id: &str) -> Result<Option<String>> {
-    let target = format!("{}{}", CREDENTIAL_PREFIX, tunnel_id);
-    let target_wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
+#[derive(Debug)]
+struct CredentialStore {
+    file_path: PathBuf,
+    data: CredentialsFile,
+}
 
-    let mut cred_ptr: *mut CREDENTIALW = std::ptr::null_mut();
+impl CredentialStore {
+    fn load(file_path: PathBuf) -> Self {
+        let data = if file_path.exists() {
+            std::fs::read_to_string(&file_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default()
+        } else {
+            CredentialsFile::default()
+        };
+        Self { file_path, data }
+    }
 
-    let result = unsafe {
-        CredReadW(
-            windows::core::PCWSTR(target_wide.as_ptr()),
-            CRED_TYPE_GENERIC,
-            0,
-            &mut cred_ptr,
-        )
-    };
+    fn save(&self) -> Result<()> {
+        let json = serde_json::to_string_pretty(&self.data)
+            .context("Failed to serialize credentials")?;
+        let tmp = self.file_path.with_extension("json.tmp");
+        std::fs::write(&tmp, json.as_bytes())
+            .context("Failed to write credentials tmp file")?;
+        std::fs::rename(&tmp, &self.file_path)
+            .context("Failed to rename credentials file")?;
+        Ok(())
+    }
+}
 
-    match result {
-        Ok(()) => {
-            let password = unsafe {
-                let cred = &*cred_ptr;
-                let blob = std::slice::from_raw_parts(
-                    cred.CredentialBlob,
-                    cred.CredentialBlobSize as usize,
-                );
-                let pwd = String::from_utf8_lossy(blob).to_string();
-                CredFree(cred_ptr as *const std::ffi::c_void);
-                pwd
-            };
-            Ok(Some(password))
+/// Initialize the credential store with the data directory path.
+/// Must be called once at startup.
+pub fn init(data_dir: &Path) {
+    let file_path = data_dir.join("credentials.json");
+    let store = CredentialStore::load(file_path);
+    *STORE.lock().unwrap() = Some(store);
+}
+
+pub fn save_password(connection_id: &str, password: &str) -> Result<()> {
+    let mut guard = STORE.lock().unwrap();
+    let store = guard.as_mut().context("Credential store not initialized")?;
+    store.data.passwords.insert(
+        connection_id.to_string(),
+        B64.encode(password.as_bytes()),
+    );
+    store.save()
+}
+
+pub fn load_password(connection_id: &str) -> Result<Option<String>> {
+    let guard = STORE.lock().unwrap();
+    let store = guard.as_ref().context("Credential store not initialized")?;
+    match store.data.passwords.get(connection_id) {
+        Some(encoded) => {
+            let bytes = B64.decode(encoded)
+                .context("Failed to decode stored password")?;
+            Ok(Some(String::from_utf8(bytes)
+                .context("Stored password is not valid UTF-8")?))
         }
-        Err(_) => Ok(None),
+        None => Ok(None),
     }
 }
 
-/// Delete a password from Windows Credential Manager.
-#[cfg(windows)]
-pub fn delete_password(tunnel_id: &str) -> Result<()> {
-    let target = format!("{}{}", CREDENTIAL_PREFIX, tunnel_id);
-    let target_wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
-
-    unsafe {
-        let _ = CredDeleteW(
-            windows::core::PCWSTR(target_wide.as_ptr()),
-            CRED_TYPE_GENERIC,
-            0,
-        );
-    }
-    Ok(())
-}
-
-// Stubs for non-Windows (won't be used but allows compilation)
-#[cfg(not(windows))]
-pub fn save_password(_tunnel_id: &str, _password: &str) -> Result<()> {
-    Err(anyhow!("Credential Manager is only available on Windows"))
-}
-
-#[cfg(not(windows))]
-pub fn load_password(_tunnel_id: &str) -> Result<Option<String>> {
-    Err(anyhow!("Credential Manager is only available on Windows"))
-}
-
-#[cfg(not(windows))]
-pub fn delete_password(_tunnel_id: &str) -> Result<()> {
-    Err(anyhow!("Credential Manager is only available on Windows"))
+pub fn delete_password(connection_id: &str) -> Result<()> {
+    let mut guard = STORE.lock().unwrap();
+    let store = guard.as_mut().context("Credential store not initialized")?;
+    store.data.passwords.remove(connection_id);
+    store.save()
 }

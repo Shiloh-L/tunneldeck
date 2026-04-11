@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tauri::{Emitter, Manager};
@@ -7,7 +8,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconEvent;
 
 use shelldeck_lib::commands;
-use shelldeck_lib::logging::audit::init_logging;
+use shelldeck_lib::logging::audit::init_logging_to;
 use shelldeck_lib::state::AppState;
 use shelldeck_lib::store::audit_logger::AuditLogger;
 use shelldeck_lib::store::json_store::JsonStore;
@@ -15,20 +16,57 @@ use shelldeck_lib::store::known_hosts::KnownHostsStore;
 use shelldeck_lib::connection::manager::ConnectionManager;
 use shelldeck_lib::connection::types::*;
 
-fn main() {
-    init_logging();
+/// Resolve portable data directory: `<exe_dir>/data/`.
+/// If the exe directory is not writable (e.g. installed to Program Files),
+/// falls back to `%LOCALAPPDATA%/ShellDeck/data/`.
+fn portable_data_dir(app: &tauri::App) -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join("data");
+            // Check if we can write to the exe directory
+            if is_dir_writable(parent) {
+                return candidate;
+            }
+        }
+    }
+    // Fallback: use system app data dir
+    app.path()
+        .app_data_dir()
+        .expect("Failed to resolve app data directory")
+}
 
+/// Test if a directory is writable by attempting to create a temp file.
+fn is_dir_writable(dir: &std::path::Path) -> bool {
+    let probe = dir.join(".shelldeck_write_test");
+    match std::fs::write(&probe, b"test") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let app_dir = app
-                .path()
-                .app_data_dir()
-                .expect("Failed to resolve app data directory");
+            let app_dir = portable_data_dir(app);
+
+            // Ensure data directory exists before anything else
+            std::fs::create_dir_all(&app_dir).expect("Failed to create data directory");
+
+            // Initialize tracing to data/logs/
+            let log_dir = app_dir.join("logs");
+            std::fs::create_dir_all(&log_dir).expect("Failed to create logs directory");
+            init_logging_to(&log_dir);
 
             let state = tauri::async_runtime::block_on(async {
                 let json_store = JsonStore::new(app_dir.clone());
                 json_store.init().await.expect("Failed to init data directory");
+
+                // Initialize portable credential store
+                shelldeck_lib::store::credential::init(&app_dir);
 
                 let connections_file: ConnectionsFile =
                     json_store.load("connections.json").await.unwrap_or_default();
