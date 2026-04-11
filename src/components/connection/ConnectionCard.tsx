@@ -44,8 +44,12 @@ export function ConnectionCard({
     if (isActive) {
       await api.stopConnection(connection.id);
     } else {
-      // Try direct connect if password is stored; fall back to dialog
+      // Try direct connect — key auth or stored password
       try {
+        if (connection.auth_method === 'key') {
+          await api.startConnection(connection.id);
+          return;
+        }
         const hasPassword = await api.hasStoredPassword(connection.id);
         if (hasPassword) {
           await api.startConnection(connection.id);
@@ -182,24 +186,39 @@ export function ConnectionCard({
 
         {/* Forward rules */}
         <div className='space-y-1 mb-2'>
-          {enabledForwards.map((fwd) => (
-            <div
-              key={fwd.id}
-              className={cn(
-                'flex items-center gap-2 text-xs font-mono',
-                'text-text-secondary',
-              )}
-            >
-              <span className='text-text-muted truncate max-w-[60px]'>
-                {fwd.name || '—'}
-              </span>
-              <span>:{fwd.local_port}</span>
-              <ArrowRight size={10} className='text-text-muted flex-shrink-0' />
-              <span className='truncate'>
-                {fwd.target_host}:{fwd.target_port}
-              </span>
-            </div>
-          ))}
+          {enabledForwards.map((fwd) => {
+            const isRunning = connection.running_forward_ids?.includes(fwd.id);
+            return (
+              <div
+                key={fwd.id}
+                className={cn(
+                  'flex items-center gap-2 text-xs font-mono',
+                  isRunning ? 'text-text-primary' : 'text-text-secondary',
+                )}
+              >
+                {connection.status === 'connected' && (
+                  <div
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                      isRunning ? 'bg-success' : 'bg-warning',
+                    )}
+                    title={isRunning ? '运行中' : '未启动'}
+                  />
+                )}
+                <span className='text-text-muted truncate max-w-[60px]'>
+                  {fwd.name || '—'}
+                </span>
+                <span>:{fwd.local_port}</span>
+                <ArrowRight
+                  size={10}
+                  className='text-text-muted flex-shrink-0'
+                />
+                <span className='truncate'>
+                  {fwd.target_host}:{fwd.target_port}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {/* Jump host */}

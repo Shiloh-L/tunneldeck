@@ -9,58 +9,33 @@ use tracing::{debug, error, info};
 use super::client::SshClient;
 use crate::connection::types::ForwardRule;
 
-/// Start local port-forwarding for multiple rules sharing one SSH session.
-/// Each enabled ForwardRule gets its own TcpListener on localhost.
-/// All listeners share the same SSH session and shutdown signal.
-pub async fn start_multi_forward(
+/// Spawn a single port-forward listener with its own shutdown channel.
+/// Returns the shutdown sender. The listener runs in a background task.
+pub async fn spawn_single_forward(
     session: Arc<Handle<SshClient>>,
-    forwards: Vec<ForwardRule>,
-    mut shutdown_rx: watch::Receiver<bool>,
-) -> Result<()> {
-    let enabled: Vec<_> = forwards.into_iter().filter(|f| f.enabled).collect();
+    rule: &ForwardRule,
+) -> Result<watch::Sender<bool>> {
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    if enabled.is_empty() {
-        return Err(anyhow::anyhow!("No enabled forward rules"));
-    }
+    let bind_addr: SocketAddr = ([127, 0, 0, 1], rule.local_port).into();
+    let listener = TcpListener::bind(bind_addr)
+        .await
+        .with_context(|| format!("Failed to bind local port {} ({})", rule.local_port, rule.name))?;
 
-    // Bind all listeners first (fail fast if any port is in use)
-    let mut listeners = Vec::with_capacity(enabled.len());
-    for rule in &enabled {
-        let bind_addr: SocketAddr = ([127, 0, 0, 1], rule.local_port).into();
-        let listener = TcpListener::bind(bind_addr)
-            .await
-            .with_context(|| format!("Failed to bind local port {} ({})", rule.local_port, rule.name))?;
-        info!(
-            "Forward: localhost:{} -> {}:{} [{}]",
-            rule.local_port, rule.target_host, rule.target_port, rule.name
-        );
-        listeners.push((listener, rule.clone()));
-    }
+    info!(
+        "Forward: localhost:{} -> {}:{} [{}]",
+        rule.local_port, rule.target_host, rule.target_port, rule.name
+    );
 
-    // Spawn an accept loop for each listener
-    let mut handles = Vec::with_capacity(listeners.len());
-    for (listener, rule) in listeners {
-        let session = session.clone();
-        let shutdown_rx = shutdown_rx.clone();
-        handles.push(tokio::spawn(accept_loop(
-            listener,
-            session,
-            rule.target_host,
-            rule.target_port,
-            rule.local_port,
-            shutdown_rx,
-        )));
-    }
+    let target_host = rule.target_host.clone();
+    let target_port = rule.target_port;
+    let local_port = rule.local_port;
 
-    // Wait for shutdown signal, then all tasks will exit
-    let _ = shutdown_rx.changed().await;
+    tokio::spawn(async move {
+        accept_loop(listener, session, target_host, target_port, local_port, shutdown_rx).await;
+    });
 
-    // Wait for all accept loops to finish
-    for h in handles {
-        let _ = h.await;
-    }
-
-    Ok(())
+    Ok(shutdown_tx)
 }
 
 /// Accept loop for a single forward rule.

@@ -25,6 +25,7 @@
       }
     ],
     "trayIcon": {
+      "id": "main",
       "iconPath": "icons/icon.png",
       "iconAsTemplate": false,
       "tooltip": "ShellDeck - SSH Connection Manager"

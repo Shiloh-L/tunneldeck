@@ -4,6 +4,7 @@ import {
 } from '@tauri-apps/api/window';
 import { Minus, X, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToastStore } from '@/stores/toastStore';
 
 let appWindow: TauriWindow | null = null;
 try {
@@ -13,6 +14,11 @@ try {
 }
 
 export function Header() {
+  const handleClose = () => {
+    useToastStore.getState().addToast('info', '已最小化到系统托盘', 2000);
+    appWindow?.hide();
+  };
+
   return (
     <header
       data-tauri-drag-region
@@ -55,7 +61,7 @@ export function Header() {
           <Square size={11} />
         </button>
         <button
-          onClick={() => appWindow?.close()}
+          onClick={handleClose}
           className={cn(
             'w-8 h-7 flex items-center justify-center rounded-md',
             'text-text-secondary hover:text-white hover:bg-danger',

@@ -84,7 +84,13 @@ export function TerminalView({ terminalId, isActive }: TerminalViewProps) {
   useEffect(() => {
     const unlistenData = listen<TerminalDataEvent>('terminal-data', (event) => {
       if (event.payload.terminalId === terminalId && termRef.current) {
-        termRef.current.write(event.payload.data);
+        // Decode base64 to raw bytes — preserves non-UTF-8 terminal data
+        const binaryStr = atob(event.payload.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        termRef.current.write(bytes);
       }
     });
 

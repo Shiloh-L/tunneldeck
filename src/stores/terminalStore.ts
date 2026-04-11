@@ -78,29 +78,40 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
 // ─── Tauri Event Listeners ────────────────────────────────────────
 
-export async function initTerminalEventListeners() {
+export async function initTerminalEventListeners(): Promise<() => void> {
   // Handle terminal exit
-  await listen<TerminalExitEvent>('terminal-exit', (event) => {
-    const state = useTerminalStore.getState();
-    state.closeTerminal(event.payload.terminalId);
-  });
+  const unlistenExit = await listen<TerminalExitEvent>(
+    'terminal-exit',
+    (event) => {
+      const state = useTerminalStore.getState();
+      state.closeTerminal(event.payload.terminalId);
+    },
+  );
 
   // Handle pending terminal: when a connection becomes 'connected' and we have a pending request
-  await listen<ConnectionStatusEvent>('connection-status', async (event) => {
-    const { connectionId, status } = event.payload;
-    const state = useTerminalStore.getState();
+  const unlistenStatus = await listen<ConnectionStatusEvent>(
+    'connection-status',
+    async (event) => {
+      const { connectionId, status } = event.payload;
+      const state = useTerminalStore.getState();
 
-    if (
-      status === 'connected' &&
-      state.pendingTerminalConnectionId === connectionId
-    ) {
-      const name = state.pendingTerminalConnectionName ?? connectionId;
-      state.setPendingTerminal(null, null);
-      try {
-        await state.openTerminal(connectionId, name);
-      } catch {
-        // Terminal open failed — connection may have dropped
+      if (
+        status === 'connected' &&
+        state.pendingTerminalConnectionId === connectionId
+      ) {
+        const name = state.pendingTerminalConnectionName ?? connectionId;
+        state.setPendingTerminal(null, null);
+        try {
+          await state.openTerminal(connectionId, name);
+        } catch {
+          // Terminal open failed — connection may have dropped
+        }
       }
-    }
-  });
+    },
+  );
+
+  return () => {
+    unlistenExit();
+    unlistenStatus();
+  };
 }

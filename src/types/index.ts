@@ -9,12 +9,16 @@ export interface ForwardRule {
   enabled: boolean;
 }
 
+export type AuthMethod = 'password' | 'key';
+
 export interface Connection {
   id: string;
   name: string;
   host: string;
   port: number;
   username: string;
+  auth_method: AuthMethod;
+  private_key_path: string | null;
   forwards: ForwardRule[];
   auto_connect: boolean;
   tag_ids: string[];
@@ -34,6 +38,7 @@ export interface ConnectionInfo extends Connection {
   status: ConnectionStatus;
   error_message?: string;
   uptime_secs?: number;
+  running_forward_ids: string[];
 }
 
 export interface CreateConnectionRequest {
@@ -42,6 +47,8 @@ export interface CreateConnectionRequest {
   port: number;
   username: string;
   password: string;
+  auth_method: AuthMethod;
+  private_key_path: string | null;
   forwards: Omit<ForwardRule, 'id'>[];
   auto_connect: boolean;
   tag_ids: string[];

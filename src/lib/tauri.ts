@@ -91,3 +91,7 @@ export const resizeTerminal = (
 
 export const closeTerminal = (terminalId: string) =>
   invoke<void>('close_terminal', { terminalId });
+
+// ─── App Lifecycle ────────────────────────────────────────────────
+
+export const exitApp = () => invoke<void>('exit_app');

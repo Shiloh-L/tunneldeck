@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use base64::Engine;
 use russh::client::Handle;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -81,17 +82,17 @@ async fn run_terminal(
             msg = channel.wait() => {
                 match msg {
                     Some(russh::ChannelMsg::Data { data }) => {
-                        let text = String::from_utf8_lossy(&data);
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
                         let _ = app.emit("terminal-data", serde_json::json!({
                             "terminalId": terminal_id,
-                            "data": text,
+                            "data": b64,
                         }));
                     }
                     Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        let text = String::from_utf8_lossy(&data);
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
                         let _ = app.emit("terminal-data", serde_json::json!({
                             "terminalId": terminal_id,
-                            "data": text,
+                            "data": b64,
                         }));
                     }
                     Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {

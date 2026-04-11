@@ -1,15 +1,24 @@
 use async_trait::async_trait;
 use russh::client;
 use ssh_key::PublicKey;
-use tracing::debug;
+use std::sync::Arc;
+use tracing::{debug, error};
 
-/// The russh client handler. Minimal: just accepts host keys.
-/// Keyboard-interactive auth is driven via Handle methods in auth.rs.
-pub struct SshClient;
+use crate::store::known_hosts::{HostKeyCheckResult, KnownHostsStore};
+
+/// The russh client handler.
+/// Verifies server host keys using TOFU (Trust On First Use) via KnownHostsStore.
+pub struct SshClient {
+    host_port: String,
+    known_hosts: Arc<KnownHostsStore>,
+}
 
 impl SshClient {
-    pub fn new() -> Self {
-        Self
+    pub fn new(host_port: String, known_hosts: Arc<KnownHostsStore>) -> Self {
+        Self {
+            host_port,
+            known_hosts,
+        }
     }
 }
 
@@ -17,13 +26,39 @@ impl SshClient {
 impl client::Handler for SshClient {
     type Error = anyhow::Error;
 
-    /// Accept all server host keys.
-    /// TODO: implement known_hosts verification for production.
+    /// Verify server host key using TOFU mechanism.
+    /// - New host: accept and store key.
+    /// - Known host, key matches: accept.
+    /// - Known host, key changed: REJECT (possible MITM).
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        debug!("Accepting server host key");
-        Ok(true)
+        match self
+            .known_hosts
+            .check_host_key(&self.host_port, server_public_key)
+            .await
+        {
+            Ok(HostKeyCheckResult::TrustedNew) => {
+                debug!("New host key accepted for {}", self.host_port);
+                Ok(true)
+            }
+            Ok(HostKeyCheckResult::TrustedKnown) => {
+                debug!("Known host key verified for {}", self.host_port);
+                Ok(true)
+            }
+            Ok(HostKeyCheckResult::Mismatch { .. }) => {
+                error!(
+                    "HOST KEY VERIFICATION FAILED for {}! Server key has changed. \
+                     This could indicate a man-in-the-middle attack.",
+                    self.host_port
+                );
+                Ok(false)
+            }
+            Err(e) => {
+                error!("Host key check error for {}: {}", self.host_port, e);
+                Ok(false)
+            }
+        }
     }
 }

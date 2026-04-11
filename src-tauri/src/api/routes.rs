@@ -49,10 +49,10 @@ async fn list_connections(
         .connections
         .iter()
         .map(|c| {
-            let (status, error, uptime) = statuses
+            let (status, error, uptime, _running_fwd_ids) = statuses
                 .get(&c.id)
                 .cloned()
-                .unwrap_or((ConnectionStatus::Disconnected, None, None));
+                .unwrap_or((ConnectionStatus::Disconnected, None, None, Vec::new()));
             let forwards: Vec<Value> = c.forwards.iter().map(|f| {
                 json!({
                     "id": f.id,
@@ -88,7 +88,7 @@ async fn get_connection_status(
     check_token(&headers, &state).await?;
 
     let statuses = state.connection_manager.get_statuses();
-    let status = statuses.get(&id).map(|(s, e, u)| json!({
+    let status = statuses.get(&id).map(|(s, e, u, _)| json!({
         "status": s,
         "error": e,
         "uptime_secs": u,

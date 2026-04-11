@@ -26,7 +26,14 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
     setConnecting(true);
 
     try {
-      if (hasStored && !password) {
+      if (connection.auth_method === 'key') {
+        // Key auth: password is optional (passphrase)
+        if (password) {
+          await api.startConnection(connection.id, password);
+        } else {
+          await api.startConnection(connection.id);
+        }
+      } else if (hasStored && !password) {
         await api.startConnection(connection.id);
       } else {
         if (!password) {
@@ -88,13 +95,23 @@ export function ConnectDialog({ connection, onClose }: ConnectDialogProps) {
           {/* Password field */}
           <div className='space-y-1.5'>
             <label className='text-xs text-text-secondary'>
-              {hasStored ? '密码 (已保存，留空使用已存密码)' : 'SSH 密码'}
+              {connection.auth_method === 'key'
+                ? '密钥密码 (如无加密可留空)'
+                : hasStored
+                  ? '密码 (已保存，留空使用已存密码)'
+                  : 'SSH 密码'}
             </label>
             <input
               type='password'
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={hasStored ? '留空使用已存密码' : '输入密码'}
+              placeholder={
+                connection.auth_method === 'key'
+                  ? '密钥未加密可留空'
+                  : hasStored
+                    ? '留空使用已存密码'
+                    : '输入密码'
+              }
               onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
               autoFocus
               className={cn(

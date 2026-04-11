@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, RwLock};
+use tracing::info;
 
 use crate::config::import_export;
 use crate::ssh::auth::AuthStatus;
@@ -23,15 +24,16 @@ pub async fn list_connections(
         .connections
         .iter()
         .map(|c| {
-            let (status, error, uptime) = statuses
+            let (status, error, uptime, running_fwd_ids) = statuses
                 .get(&c.id)
                 .cloned()
-                .unwrap_or((ConnectionStatus::Disconnected, None, None));
+                .unwrap_or((ConnectionStatus::Disconnected, None, None, Vec::new()));
             ConnectionInfo {
                 config: c.clone(),
                 status,
                 error_message: error,
                 uptime_secs: uptime,
+                running_forward_ids: running_fwd_ids,
             }
         })
         .collect();
@@ -60,6 +62,10 @@ pub struct CreateConnectionRequest {
     pub port: u16,
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    pub auth_method: AuthMethod,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
     pub forwards: Vec<CreateForwardRuleRequest>,
     pub auto_connect: bool,
     pub tag_ids: Vec<String>,
@@ -75,6 +81,8 @@ pub async fn create_connection(
     let mut config = Connection::new(req.name, req.host, req.port, req.username);
     config.auto_connect = req.auto_connect;
     config.tag_ids = req.tag_ids;
+    config.auth_method = req.auth_method;
+    config.private_key_path = req.private_key_path;
     config.forwards = req
         .forwards
         .into_iter()
@@ -119,7 +127,9 @@ pub async fn update_connection(
 ) -> Result<(), String> {
     let mut state = state.write().await;
 
-    if let Some(existing) = state.connections_file.connections.iter_mut().find(|c| c.id == connection.id) {
+    let connection_id = connection.id.clone();
+
+    if let Some(existing) = state.connections_file.connections.iter_mut().find(|c| c.id == connection_id) {
         *existing = connection.clone();
         existing.updated_at = chrono::Utc::now().to_rfc3339();
     } else {
@@ -131,6 +141,14 @@ pub async fn update_connection(
         .save("connections.json", &state.connections_file)
         .await
         .map_err(|e| e.to_string())?;
+
+    // If the connection is currently running, hot-sync forward rules
+    let statuses = state.connection_manager.get_statuses();
+    if let Some((ConnectionStatus::Connected, _, _, _)) = statuses.get(&connection_id) {
+        if let Err(e) = state.connection_manager.sync_forwards(&connection_id, &connection.forwards).await {
+            info!("Forward sync for {}: {}", connection_id, e);
+        }
+    }
 
     Ok(())
 }
@@ -199,11 +217,12 @@ pub async fn start_connection(
         .ok_or_else(|| "Connection not found".to_string())?;
 
     // Get password: from parameter or from credential store
+    // For key-based auth, password is optional (used as passphrase if the key is encrypted)
     let pwd = match password {
         Some(p) => p,
         None => credential::load_password(&connection_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "No password stored for this connection".to_string())?,
+            .unwrap_or_default(),
     };
 
     // Create auth status channel to update UI during Duo Push
@@ -231,9 +250,11 @@ pub async fn start_connection(
         }
     });
 
+    let max_reconnect = state.settings.max_reconnect_attempts;
+
     state
         .connection_manager
-        .start(config, pwd, auth_tx)
+        .start(config, pwd, auth_tx, max_reconnect)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -438,9 +459,44 @@ pub async fn close_terminal(
     state: State<'_, Arc<RwLock<AppState>>>,
     terminal_id: String,
 ) -> Result<(), String> {
-    let mut state = state.write().await;
-    state
-        .connection_manager
-        .close_terminal(&terminal_id)
-        .map_err(|e| e.to_string())
+    let should_disconnect;
+    let connection_id;
+    {
+        let mut s = state.write().await;
+        connection_id = s
+            .connection_manager
+            .close_terminal(&terminal_id)
+            .map_err(|e| e.to_string())?;
+        should_disconnect = s.connection_manager.should_auto_disconnect(&connection_id);
+    } // Release the write lock before spawning
+
+    if should_disconnect {
+        info!("Scheduling auto-disconnect for {} (no terminals or forwards remaining)", connection_id);
+        let state_arc = state.inner().clone();
+        tokio::spawn(async move {
+            // Brief delay to let terminal task fully exit and clean up
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let mut s = state_arc.write().await;
+            // Re-check: another terminal might have been opened in the meantime
+            if s.connection_manager.should_auto_disconnect(&connection_id) {
+                info!("Auto-disconnecting {}", connection_id);
+                let _ = s.connection_manager.stop(&connection_id).await;
+            }
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn exit_app(
+    app: AppHandle,
+    state: State<'_, Arc<RwLock<AppState>>>,
+) -> Result<(), String> {
+    {
+        let mut s = state.write().await;
+        s.connection_manager.stop_all().await;
+    }
+    app.exit(0);
+    Ok(())
 }

@@ -8,6 +8,7 @@ import type {
   AuthStatusEvent,
 } from '@/types';
 import * as api from '@/lib/tauri';
+import { useToastStore } from './toastStore';
 
 interface ConnectionStore {
   // ─── State ──────────────────────────────────
@@ -102,20 +103,50 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
 // ─── Tauri Event Listeners (call once on app init) ────────────────
 
-export async function initEventListeners() {
-  await listen<ConnectionStatusEvent>('connection-status', (event) => {
-    const { connectionId, status, error } = event.payload;
-    useConnectionStore
-      .getState()
-      .updateConnectionStatus(connectionId, status, error);
-  });
+export async function initEventListeners(): Promise<() => void> {
+  const unlistenStatus = await listen<ConnectionStatusEvent>(
+    'connection-status',
+    (event) => {
+      const { connectionId, status, error } = event.payload;
+      const store = useConnectionStore.getState();
+      store.updateConnectionStatus(connectionId, status, error);
 
-  await listen<AuthStatusEvent>('connection-auth-status', (event) => {
-    const { connectionId, status } = event.payload;
-    if (status === 'waiting_duo_push') {
-      useConnectionStore.getState().setDuoPushConnectionId(connectionId);
-    } else if (status === 'success' || status === 'failed') {
-      useConnectionStore.getState().setDuoPushConnectionId(null);
-    }
-  });
+      // Toast notifications
+      const conn = store.connections.find((c) => c.id === connectionId);
+      const name = conn?.name ?? connectionId.slice(0, 8);
+      const toast = useToastStore.getState().addToast;
+
+      switch (status) {
+        case 'connected':
+          toast('success', `${name} 已连接`);
+          break;
+        case 'disconnected':
+          toast('info', `${name} 已断开`);
+          break;
+        case 'error':
+          toast('error', `${name} 连接失败${error ? ': ' + error : ''}`);
+          break;
+        case 'reconnecting':
+          toast('warning', `${name} 正在重连…`);
+          break;
+      }
+    },
+  );
+
+  const unlistenAuth = await listen<AuthStatusEvent>(
+    'connection-auth-status',
+    (event) => {
+      const { connectionId, status } = event.payload;
+      if (status === 'waiting_duo_push') {
+        useConnectionStore.getState().setDuoPushConnectionId(connectionId);
+      } else if (status === 'success' || status === 'failed') {
+        useConnectionStore.getState().setDuoPushConnectionId(null);
+      }
+    },
+  );
+
+  return () => {
+    unlistenStatus();
+    unlistenAuth();
+  };
 }

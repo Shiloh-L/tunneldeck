@@ -81,14 +81,20 @@ export function Sidebar({
 
     // Not connected → need to connect first, then open terminal
     try {
-      const hasPassword = await api.hasStoredPassword(conn.id);
-      if (hasPassword) {
+      if (conn.auth_method === 'key') {
+        // Key-based auth doesn't need password dialog
         setPendingTerminal(conn.id, conn.name);
         await api.startConnection(conn.id);
       } else {
-        // No saved password → show connect dialog (auto-connect terminal flow)
-        setPendingTerminal(conn.id, conn.name);
-        onConnectDialog(conn);
+        const hasPassword = await api.hasStoredPassword(conn.id);
+        if (hasPassword) {
+          setPendingTerminal(conn.id, conn.name);
+          await api.startConnection(conn.id);
+        } else {
+          // No saved password → show connect dialog
+          setPendingTerminal(conn.id, conn.name);
+          onConnectDialog(conn);
+        }
       }
     } catch {
       setPendingTerminal(null, null);
@@ -99,11 +105,15 @@ export function Sidebar({
   const handleConnect = async (conn: ConnectionInfo) => {
     setContextMenu(null);
     try {
-      const hasPassword = await api.hasStoredPassword(conn.id);
-      if (hasPassword) {
+      if (conn.auth_method === 'key') {
         await api.startConnection(conn.id);
       } else {
-        onConnectDialog(conn);
+        const hasPassword = await api.hasStoredPassword(conn.id);
+        if (hasPassword) {
+          await api.startConnection(conn.id);
+        } else {
+          onConnectDialog(conn);
+        }
       }
     } catch {
       /* handled by status events */

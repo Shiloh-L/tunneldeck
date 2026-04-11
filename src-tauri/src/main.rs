@@ -3,12 +3,15 @@
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tauri::{Emitter, Manager};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconEvent;
 
 use shelldeck_lib::commands;
 use shelldeck_lib::logging::audit::init_logging;
 use shelldeck_lib::state::AppState;
 use shelldeck_lib::store::audit_logger::AuditLogger;
 use shelldeck_lib::store::json_store::JsonStore;
+use shelldeck_lib::store::known_hosts::KnownHostsStore;
 use shelldeck_lib::connection::manager::ConnectionManager;
 use shelldeck_lib::connection::types::*;
 
@@ -41,7 +44,9 @@ fn main() {
                 let _ = audit.cleanup_old_logs().await;
 
                 let (status_tx, status_rx) = mpsc::channel(256);
-                let connection_manager = ConnectionManager::new(audit.clone(), status_tx);
+                let known_hosts = Arc::new(KnownHostsStore::new(app_dir.clone()));
+                let _ = known_hosts.load().await;
+                let connection_manager = ConnectionManager::new(audit.clone(), known_hosts, status_tx);
 
                 Arc::new(RwLock::new(AppState {
                     json_store,
@@ -90,7 +95,80 @@ fn main() {
                 }
             });
 
+            // Auto-connect: start connections marked with auto_connect that have stored passwords
+            let state_for_auto = state.clone();
+            tauri::async_runtime::spawn(async move {
+                let (auto_connections, max_reconnect): (Vec<Connection>, u32) = {
+                    let s = state_for_auto.read().await;
+                    let conns = s.connections_file
+                        .connections
+                        .iter()
+                        .filter(|c| c.auto_connect)
+                        .cloned()
+                        .collect();
+                    (conns, s.settings.max_reconnect_attempts)
+                };
+
+                for config in auto_connections {
+                    // For key-based auth, password is optional (passphrase); for password auth, required
+                    let pwd = match shelldeck_lib::store::credential::load_password(&config.id) {
+                        Ok(Some(p)) => p,
+                        Ok(None) if config.auth_method == shelldeck_lib::connection::types::AuthMethod::Key => {
+                            String::new()
+                        }
+                        _ => {
+                            tracing::warn!(
+                                "Auto-connect skipped for {} (no stored password)",
+                                config.name
+                            );
+                            continue;
+                        }
+                    };
+                    let (auth_tx, _auth_rx) = mpsc::channel::<shelldeck_lib::ssh::auth::AuthStatus>(16);
+                    let mut s = state_for_auto.write().await;
+                    if let Err(e) = s.connection_manager.start(config.clone(), pwd, auth_tx, max_reconnect).await {
+                        tracing::error!("Auto-connect failed for {}: {}", config.name, e);
+                    } else {
+                        tracing::info!("Auto-connecting {}", config.name);
+                    }
+                }
+            });
+
             app.manage(state);
+
+            // Set up tray menu
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            if let Some(tray) = app.tray_by_id("main") {
+                tray.set_menu(Some(menu))?;
+                tray.on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                });
+                tray.on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+            }
+
+            // Close-to-tray: handled in .on_window_event() below
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -114,7 +192,15 @@ fn main() {
             commands::write_terminal,
             commands::resize_terminal,
             commands::close_terminal,
+            commands::exit_app,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide to tray instead of quitting
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running ShellDeck");
 }

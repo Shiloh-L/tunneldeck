@@ -8,6 +8,7 @@ import { DuoPushDialog } from '@/components/connection/DuoPushDialog';
 import { TagManager } from '@/components/tags/TagManager';
 import { LogViewer } from '@/components/logs/LogViewer';
 import { Settings } from '@/components/settings/Settings';
+import { ToastContainer } from '@/components/layout/ToastContainer';
 import {
   useConnectionStore,
   initEventListeners,
@@ -29,10 +30,32 @@ export default function App() {
   const [dialog, setDialog] = useState<Dialog>({ type: 'none' });
 
   useEffect(() => {
-    initEventListeners();
-    initTerminalEventListeners();
+    let cancelled = false;
+    const cleanups: (() => void)[] = [];
+
+    (async () => {
+      const fn1 = await initEventListeners();
+      if (cancelled) {
+        fn1();
+        return;
+      }
+      cleanups.push(fn1);
+
+      const fn2 = await initTerminalEventListeners();
+      if (cancelled) {
+        fn2();
+        return;
+      }
+      cleanups.push(fn2);
+    })();
+
     loadConnections();
     loadTags();
+
+    return () => {
+      cancelled = true;
+      cleanups.forEach((fn) => fn());
+    };
   }, []);
 
   return (
@@ -88,6 +111,7 @@ export default function App() {
       )}
 
       <DuoPushDialog />
+      <ToastContainer />
     </div>
   );
 }

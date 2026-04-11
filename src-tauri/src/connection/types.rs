@@ -32,6 +32,20 @@ impl ForwardRule {
 
 // ─── Connection (one SSH session with N forward rules) ────────────
 
+/// SSH authentication method
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMethod {
+    Password,
+    Key,
+}
+
+impl Default for AuthMethod {
+    fn default() -> Self {
+        Self::Password
+    }
+}
+
 /// An SSH connection configuration persisted in connections.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
@@ -41,6 +55,11 @@ pub struct Connection {
     #[serde(default = "default_ssh_port")]
     pub port: u16,
     pub username: String,
+    #[serde(default)]
+    pub auth_method: AuthMethod,
+    /// Path to private key file (used when auth_method == Key)
+    #[serde(default)]
+    pub private_key_path: Option<String>,
     #[serde(default)]
     pub forwards: Vec<ForwardRule>,
     #[serde(default)]
@@ -64,6 +83,8 @@ impl Connection {
             host,
             port,
             username,
+            auth_method: AuthMethod::Password,
+            private_key_path: None,
             forwards: Vec::new(),
             auto_connect: false,
             tag_ids: Vec::new(),
@@ -95,6 +116,8 @@ pub struct ConnectionInfo {
     pub error_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uptime_secs: Option<u64>,
+    #[serde(default)]
+    pub running_forward_ids: Vec<String>,
 }
 
 /// Tag for organizing tunnels

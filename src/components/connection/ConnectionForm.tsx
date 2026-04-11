@@ -1,9 +1,18 @@
 import { useState } from 'react';
-import { X, Server, Globe, Waypoints, Plus, Trash2 } from 'lucide-react';
+import {
+  X,
+  Server,
+  Globe,
+  Waypoints,
+  Plus,
+  Trash2,
+  Key,
+  Lock,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useConnectionStore } from '@/stores/connectionStore';
 import * as api from '@/lib/tauri';
-import type { ConnectionInfo, ForwardRule } from '@/types';
+import type { ConnectionInfo, ForwardRule, AuthMethod } from '@/types';
 
 interface ConnectionFormProps {
   connection?: ConnectionInfo; // if provided, we're editing
@@ -29,6 +38,8 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
     port: connection?.port ?? 22,
     username: connection?.username ?? '',
     password: '',
+    auth_method: (connection?.auth_method ?? 'password') as AuthMethod,
+    private_key_path: connection?.private_key_path ?? '',
     auto_connect: connection?.auto_connect ?? false,
     tag_ids: connection?.tag_ids ?? [],
   });
@@ -91,6 +102,8 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
           host: form.host,
           port: form.port,
           username: form.username,
+          auth_method: form.auth_method,
+          private_key_path: form.private_key_path || null,
           forwards: updatedForwards,
           auto_connect: form.auto_connect,
           tag_ids: form.tag_ids,
@@ -106,6 +119,8 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
           port: form.port,
           username: form.username,
           password: form.password,
+          auth_method: form.auth_method,
+          private_key_path: form.private_key_path || null,
           forwards: forwards.map((f) => ({
             name: f.name,
             local_port: f.local_port,
@@ -213,11 +228,60 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
                 type='password'
                 value={form.password}
                 onChange={(e) => update({ password: e.target.value })}
-                placeholder={isEditing ? '不修改留空' : '密码 (Duo Push)'}
-                required={!isEditing}
+                placeholder={
+                  isEditing
+                    ? '不修改留空'
+                    : form.auth_method === 'key'
+                      ? '密钥密码 (可选)'
+                      : '密码 (Duo Push)'
+                }
+                required={!isEditing && form.auth_method === 'password'}
                 className={inputClass}
               />
             </div>
+          </div>
+
+          {/* Auth Method */}
+          <div className='space-y-2'>
+            <SectionLabel icon={<Key size={13} />} label='认证方式' />
+            <div className='flex gap-2'>
+              <button
+                type='button'
+                onClick={() => update({ auth_method: 'password' })}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 h-8 text-xs font-medium rounded-lg border transition-all',
+                  form.auth_method === 'password'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-text-muted hover:text-text-secondary hover:border-border-focus',
+                )}
+              >
+                <Lock size={12} />
+                密码
+              </button>
+              <button
+                type='button'
+                onClick={() => update({ auth_method: 'key' })}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 h-8 text-xs font-medium rounded-lg border transition-all',
+                  form.auth_method === 'key'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-text-muted hover:text-text-secondary hover:border-border-focus',
+                )}
+              >
+                <Key size={12} />
+                密钥
+              </button>
+            </div>
+            {form.auth_method === 'key' && (
+              <input
+                type='text'
+                value={form.private_key_path}
+                onChange={(e) => update({ private_key_path: e.target.value })}
+                placeholder='私钥路径 (如: C:\Users\xxx\.ssh\id_ed25519)'
+                required
+                className={inputClass}
+              />
+            )}
           </div>
 
           {/* Tags */}
