@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use super::client::SshClient;
 use crate::connection::types::ForwardRule;
@@ -116,10 +116,18 @@ async fn handle_connection(
 
     tokio::select! {
         result = tokio::io::copy(&mut tcp_read, &mut chan_write) => {
-            debug!("TCP->SSH copy finished for {}: {:?}", peer_addr, result);
+            match &result {
+                Ok(bytes) => debug!("TCP->SSH copy finished for {} ({} bytes)", peer_addr, bytes),
+                Err(e) if e.raw_os_error() == Some(10054) => debug!("TCP->SSH closed by peer {} (connection reset)", peer_addr),
+                Err(e) => warn!("TCP->SSH copy error for {}: {}", peer_addr, e),
+            }
         }
         result = tokio::io::copy(&mut chan_read, &mut tcp_write) => {
-            debug!("SSH->TCP copy finished for {}: {:?}", peer_addr, result);
+            match &result {
+                Ok(bytes) => debug!("SSH->TCP copy finished for {} ({} bytes)", peer_addr, bytes),
+                Err(e) if e.raw_os_error() == Some(10054) => debug!("SSH->TCP closed by peer {} (connection reset)", peer_addr),
+                Err(e) => warn!("SSH->TCP copy error for {}: {}", peer_addr, e),
+            }
         }
         _ = shutdown_rx.changed() => {
             debug!("Connection to {} shut down", peer_addr);

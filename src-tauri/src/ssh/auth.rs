@@ -42,8 +42,8 @@ impl AuthHandler {
     /// Drive SSH authentication per RFC 4252.
     /// 1. Send "none" to probe server-supported methods.
     /// 2. Try publickey if a private key is provided.
-    /// 3. Try keyboard-interactive (supports 2FA/Duo Push).
-    /// 4. Fall back to password auth.
+    /// 3. Try password auth (many servers require password before 2FA).
+    /// 4. Try keyboard-interactive (handles Duo Push / 2FA after partial success).
     pub async fn run_auth(
         &mut self,
         session: &mut Handle<SshClient>,
@@ -83,48 +83,50 @@ impl AuthHandler {
             }
         }
 
-        // Step 3: Try keyboard-interactive (higher priority — supports 2FA/MFA)
-        debug!("Trying keyboard-interactive authentication for {}", username);
+        // Step 3: Try password auth first (many servers require password before 2FA)
+        debug!("Trying password authentication for {}", username);
         let _ = self.status_tx.send(AuthStatus::PromptingPassword).await;
+        match session.authenticate_password(username, &self.password).await {
+            Ok(true) => {
+                info!("Password authentication successful (no 2FA required)");
+                let _ = self.status_tx.send(AuthStatus::Success).await;
+                return Ok(());
+            }
+            Ok(false) => {
+                // Could be partial success — server accepted password but needs 2FA
+                info!("Password auth returned false — may be partial success requiring 2FA, trying keyboard-interactive...");
+            }
+            Err(e) => {
+                debug!("Password auth error: {}, trying keyboard-interactive directly", e);
+            }
+        }
 
+        // Step 4: Try keyboard-interactive (handles Duo Push / 2FA after password partial success)
+        debug!("Trying keyboard-interactive authentication for {}", username);
+
+        info!("Sending keyboard-interactive start request...");
         match session
             .authenticate_keyboard_interactive_start(username, None)
             .await
         {
             Ok(auth_result) => {
+                info!("Keyboard-interactive start returned, processing response...");
                 match self.handle_auth_result(session, username, auth_result).await {
                     Ok(()) => return Ok(()),
                     Err(e) => {
-                        debug!("Keyboard-interactive failed: {}, trying password auth", e);
+                        warn!("Keyboard-interactive failed: {}", e);
                     }
                 }
             }
             Err(e) => {
-                debug!("Keyboard-interactive start error: {}, trying password auth", e);
+                warn!("Keyboard-interactive start error: {}", e);
             }
         }
 
-        // Step 4: Fall back to password auth
-        debug!("Trying password authentication for {}", username);
-        match session.authenticate_password(username, &self.password).await {
-            Ok(true) => {
-                info!("Password authentication successful");
-                let _ = self.status_tx.send(AuthStatus::Success).await;
-                return Ok(());
-            }
-            Ok(false) => {
-                let msg = "All authentication methods failed".to_string();
-                warn!("{}", msg);
-                let _ = self.status_tx.send(AuthStatus::Failed(msg.clone())).await;
-                return Err(anyhow!(msg));
-            }
-            Err(e) => {
-                let msg = format!("Password authentication error: {}", e);
-                warn!("{}", msg);
-                let _ = self.status_tx.send(AuthStatus::Failed(msg.clone())).await;
-                return Err(anyhow!(msg));
-            }
-        }
+        let msg = "All authentication methods failed".to_string();
+        warn!("{}", msg);
+        let _ = self.status_tx.send(AuthStatus::Failed(msg.clone())).await;
+        Err(anyhow!(msg))
     }
 
     /// Attempt publickey authentication using the given private key file.
@@ -191,19 +193,24 @@ impl AuthHandler {
                     instructions,
                     prompts,
                 } => {
-                    debug!(
+                    info!(
                         "Auth info request: name={:?}, instructions={:?}, prompts count={}",
                         name,
                         instructions,
                         prompts.len()
                     );
+                    for (i, p) in prompts.iter().enumerate() {
+                        info!("  prompt[{}]: text={:?}, echo={}", i, p.prompt, p.echo);
+                    }
 
                     let responses = self.generate_responses(prompts).await?;
 
+                    info!("Sending keyboard-interactive response ({} answers)...", responses.len());
                     result = session
                         .authenticate_keyboard_interactive_respond(responses)
                         .await
                         .context("Failed to respond to keyboard-interactive prompt")?;
+                    info!("Keyboard-interactive respond returned, checking next result...");
                 }
             }
         }
@@ -220,9 +227,10 @@ impl AuthHandler {
 
         for p in prompts {
             let prompt_lower = p.prompt.to_lowercase();
+            info!("Processing prompt: {:?} (lowercase: {:?})", p.prompt, prompt_lower);
 
             if prompt_lower.contains("password") {
-                debug!("Detected password prompt, sending stored password");
+                info!("Detected password prompt, sending stored password");
                 let _ = self.status_tx.send(AuthStatus::PromptingPassword).await;
                 responses.push(self.password.clone());
             } else if prompt_lower.contains("duo")
@@ -233,13 +241,13 @@ impl AuthHandler {
                 || prompt_lower.is_empty()
             {
                 // Duo Push: send "1" to select push option, or empty string
-                debug!("Detected Duo/2FA prompt: {:?}, sending push trigger", p.prompt);
+                info!("Detected Duo/2FA prompt: {:?}, sending push trigger '1'", p.prompt);
                 let _ = self.status_tx.send(AuthStatus::WaitingDuoPush).await;
                 // "1" is typically the Duo Push option
                 responses.push("1".to_string());
             } else {
                 // Unknown prompt - try empty response
-                debug!("Unknown prompt: {:?}, sending empty response", p.prompt);
+                warn!("Unknown prompt: {:?}, sending empty response", p.prompt);
                 responses.push(String::new());
             }
         }

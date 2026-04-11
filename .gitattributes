@@ -1,0 +1,13 @@
+# Force LF line endings for all text files
+* text=auto eol=lf
+
+# Ensure generated schemas stay LF
+src-tauri/gen/schemas/*.json text eol=lf
+
+# Rust / TOML files
+*.rs text eol=lf
+*.toml text eol=lf
+
+# Windows batch files need CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
